@@ -1,0 +1,26 @@
+{
+  "version": "2",
+  "principals": [
+    { "id": "root", "authority": [
+      { "scope": "a:2", "target": "svc-b" },
+      { "scope": "a:1", "target": "svc-a" }
+    ] }
+  ],
+  "agents": [
+    { "id": "leaf" },
+    { "id": "mid" }
+  ],
+  "delegations": [
+    { "delegator": "mid", "delegatee": "leaf", "authority": [
+      { "scope": "a:1", "target": "svc-a" }
+    ] },
+    { "delegator": "root", "delegatee": "mid", "authority": [
+      { "scope": "a:2", "target": "svc-b" },
+      { "scope": "a:1", "target": "svc-a" }
+    ] }
+  ],
+  "operations": [
+    { "actor": "leaf", "action": "task.a", "requires": "a:1", "target": "svc-a" },
+    { "actor": "mid", "action": "task.b", "requires": "a:2", "target": "svc-b" }
+  ]
+}

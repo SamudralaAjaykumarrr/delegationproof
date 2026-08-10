@@ -47,7 +47,7 @@ func runValidate(args []string, stdout, stderr io.Writer) int {
 		return int(exitcode.UsageError)
 	}
 
-	_, loadErr := loader.Load(path)
+	_, loadErr := loader.LoadDocument(path)
 	if loadErr != nil {
 		fmt.Fprint(stderr, loadErr.RenderText())
 		return int(exitcode.ModelError)
@@ -64,13 +64,19 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		return int(exitcode.UsageError)
 	}
 
-	m, loadErr := loader.Load(path)
+	doc, loadErr := loader.LoadDocument(path)
 	if loadErr != nil {
 		fmt.Fprint(stderr, loadErr.RenderText())
 		return int(exitcode.ModelError)
 	}
 
-	result := verify.Run(m)
+	var result report.Result
+	switch {
+	case doc.V1 != nil:
+		result = verify.Run(doc.V1)
+	case doc.V2 != nil:
+		result = verify.RunV2(doc.V2)
+	}
 
 	switch format {
 	case "json":

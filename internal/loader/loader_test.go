@@ -71,6 +71,16 @@ func TestMalformedFixtures(t *testing.T) {
 		{"unknown-actor.json", false, KindUnknownActor},
 		{"cycle-2-node.json", false, KindCycleDetected},
 		{"cycle-3-node.json", false, KindCycleDetected},
+		// Version-2 fixtures (docs/phase-2-plan.md §10): Load is the
+		// version-1-only decode path, so a v2 document's object-shaped
+		// capability entries fail to decode into model.Model's []string
+		// authority field — a ParseError, not a specific ErrorKind. The
+		// version-2-aware assertions for these same fixtures (exact
+		// ErrorKind via LoadDocument) live in loader_v2_test.go.
+		{"invalid-target-format.json", true, ""},
+		{"missing-target.json", true, ""},
+		{"duplicate-capability.json", true, ""},
+		{"target-exceeds-max-length.json", true, ""},
 	}
 
 	dir := filepath.Join(testdataRoot, "malformed")

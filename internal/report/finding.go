@@ -13,6 +13,13 @@ import (
 // without a breaking schema change.
 const ViolationAuthorityAmplification = "authority_amplification"
 
+// ViolationContextBinding is the Phase 2 violation literal
+// (docs/phase-2-plan.md §3, §7): a scope was validly granted, but only for
+// a different target than the one exercised or transmitted. Emitted only
+// by CapabilityEdgeFinding/CapabilityOperationFinding, never by Phase 1's
+// EdgeFinding/OperationFinding.
+const ViolationContextBinding = "context_binding_violation"
+
 const (
 	PointDelegationEdge = "delegation_edge"
 	PointOperation      = "operation"
@@ -91,21 +98,30 @@ func nonNil(s []string) []string {
 	return s
 }
 
-// sortKey is the total order defined in §8 step 4:
-// (point, subject_id, secondary_id_or_action, scope).
+// sortKey is the total order defined in §8 step 4, extended by
+// docs/phase-2-plan.md §12 with a trailing target field:
+// (point, subject_id, secondary_id_or_action, scope, target). For any
+// Phase-1-shaped finding, target is always "", so this is a strict
+// extension of Phase 1's 4-tuple order — it degenerates to exactly the
+// original order whenever target is uniformly empty.
 type sortKey struct {
 	point     string
 	subject   string
 	secondary string
 	scope     string
+	target    string
 }
 
 func keyOf(f interface{}) sortKey {
 	switch v := f.(type) {
 	case EdgeFinding:
-		return sortKey{v.Point, v.Delegator, v.Delegatee, ""}
+		return sortKey{v.Point, v.Delegator, v.Delegatee, "", ""}
 	case OperationFinding:
-		return sortKey{v.Point, v.Actor, v.Action, v.Requires}
+		return sortKey{v.Point, v.Actor, v.Action, v.Requires, ""}
+	case CapabilityEdgeFinding:
+		return sortKey{v.Point, v.Delegator, v.Delegatee, "", ""}
+	case CapabilityOperationFinding:
+		return sortKey{v.Point, v.Actor, v.Action, v.Requires.Scope, v.Requires.Target}
 	default:
 		panic(fmt.Sprintf("report: unknown finding type %T", f))
 	}
@@ -121,7 +137,10 @@ func less(a, b sortKey) bool {
 	if a.secondary != b.secondary {
 		return a.secondary < b.secondary
 	}
-	return a.scope < b.scope
+	if a.scope != b.scope {
+		return a.scope < b.scope
+	}
+	return a.target < b.target
 }
 
 // Sort orders findings (a mix of EdgeFinding and OperationFinding values) in

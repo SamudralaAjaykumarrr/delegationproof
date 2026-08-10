@@ -1,0 +1,20 @@
+{
+  "version": "2",
+  "principals": [
+    { "id": "root", "authority": [
+      { "scope": "a", "target": "svc-a" }
+    ] }
+  ],
+  "agents": [
+    { "id": "mid" }
+  ],
+  "delegations": [
+    { "delegator": "root", "delegatee": "mid", "authority": [
+      { "scope": "a", "target": "svc-a" }
+    ] }
+  ],
+  "operations": [
+    { "actor": "mid", "action": "op-wrong-target", "requires": "a", "target": "svc-b" },
+    { "actor": "mid", "action": "op-never-held",   "requires": "b", "target": "svc-a" }
+  ]
+}

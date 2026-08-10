@@ -1,0 +1,20 @@
+DENY
+2 finding(s)
+
+[1] authority_amplification (operation)
+  actor:         mid
+  action:        op-never-held
+  requires:      b@svc-a
+  held:          a@svc-a
+  bound targets: (none)
+  trace:         root -> mid -> op-never-held
+  reason:        b@svc-a was never present in the valid delegation chain reaching mid
+
+[2] context_binding_violation (operation)
+  actor:         mid
+  action:        op-wrong-target
+  requires:      a@svc-b
+  held:          a@svc-a
+  bound targets: svc-a
+  trace:         root -> mid -> op-wrong-target
+  reason:        a is held by mid only for svc-a, which does not include svc-b

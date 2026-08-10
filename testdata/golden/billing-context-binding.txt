@@ -1,0 +1,11 @@
+DENY
+1 finding(s)
+
+[1] context_binding_violation (operation)
+  actor:         billing-agent
+  action:        read-record
+  requires:      billing:read@payroll-service
+  held:          billing:read@billing-service
+  bound targets: billing-service
+  trace:         user -> billing-agent -> read-record
+  reason:        billing:read is held by billing-agent only for billing-service, which does not include payroll-service

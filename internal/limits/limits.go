@@ -34,4 +34,9 @@ var (
 	// against pathological input, not a policy-level depth-limit
 	// invariant (that is a distinct, deferred Phase 2+ concept).
 	MaxChainDepth = 64
+
+	// MaxTargetLength is the maximum byte length of a Phase 2 capability
+	// target string (docs/phase-2-plan.md §17). Mirrors MaxIDLength, since
+	// the target grammar mirrors the id grammar (§5).
+	MaxTargetLength = 128
 )

@@ -1,8 +1,8 @@
-// Package loader parses and structurally validates a DelegationProof Phase 1
-// input document (docs/phase-1-plan.md §7). All structural errors are
-// collected and reported together, never fail-fast, except for problems
-// that prevent building a parseable document at all (file access, JSON
-// syntax/schema errors), which are singular by nature.
+// Version-2 loading: the version-peek dispatch mechanism and structural
+// validation for version-2 documents (docs/phase-2-plan.md §9, §10). This
+// file is purely additive to loader.go: Load/validate (the version-1 path)
+// are not called from here except where explicitly noted, and are not
+// modified by anything in this file.
 package loader
 
 import (
@@ -20,94 +20,65 @@ import (
 	"github.com/SamudralaAjaykumarrr/delegationproof/internal/model"
 )
 
-// ErrorKind identifies the category of a structural validation error.
-type ErrorKind string
+var targetRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
-const (
-	KindInvalidVersion        ErrorKind = "invalid_version"
-	KindInvalidID             ErrorKind = "invalid_id"
-	KindInvalidScope          ErrorKind = "invalid_scope"
-	KindInvalidAction         ErrorKind = "invalid_action"
-	KindDuplicateNodeID       ErrorKind = "duplicate_node_id"
-	KindDuplicateEdge         ErrorKind = "duplicate_delegation_edge"
-	KindUnknownDelegator      ErrorKind = "unknown_delegator"
-	KindUnknownDelegatee      ErrorKind = "unknown_delegatee"
-	KindDelegateeIsPrincipal  ErrorKind = "delegatee_is_principal"
-	KindSelfDelegation        ErrorKind = "self_delegation"
-	KindEmptyAuthority        ErrorKind = "empty_authority"
-	KindDuplicateScope        ErrorKind = "duplicate_scope"
-	KindUnknownActor          ErrorKind = "unknown_actor"
-	KindCycleDetected         ErrorKind = "cycle_detected"
-	KindResourceLimitExceeded ErrorKind = "resource_limit_exceeded"
-
-	// Version-2-only kinds (docs/phase-2-plan.md §10).
-	KindInvalidTarget       ErrorKind = "invalid_target"
-	KindDuplicateCapability ErrorKind = "duplicate_capability"
-)
-
-// ValidationError is one structural problem found in an otherwise-decodable
-// document.
-type ValidationError struct {
-	Kind      ErrorKind
-	Primary   string
-	Secondary string
-	Message   string
+// Document is the result of a version-dispatched load (§9): exactly one of
+// V1/V2 is set on success.
+type Document struct {
+	V1 *model.Model
+	V2 *model.ModelV2
 }
 
-func (e ValidationError) String() string {
-	return fmt.Sprintf("[%s] %s: %s", e.Kind, e.Primary, e.Message)
+// versionPeek decodes only the "version" field, permissively, ignoring
+// every other top-level key and imposing no field-shape requirements — it
+// exists solely to read the version literal before committing to a struct
+// shape (§9 step 2).
+type versionPeek struct {
+	Version string `json:"version"`
 }
 
-// LoadError is the union of everything that can prevent Load from returning
-// a usable Model. Exactly one of FileError, ParseError, or a non-empty
-// Errors is set.
-type LoadError struct {
-	FileError  string
-	ParseError string
-	Errors     []ValidationError
-}
+// LoadDocument reads, version-dispatches, and structurally validates the
+// model at path (§9). A version literal of "1" routes through the
+// existing, untouched v1 decode+validate path; "2" routes through the new
+// v2 path; anything else (including absent, which decodes as "") is a
+// single invalid_version validation error.
+func LoadDocument(path string) (*Document, *LoadError) {
+	data, loadErr := readInputFile(path)
+	if loadErr != nil {
+		return nil, loadErr
+	}
 
-func (e *LoadError) Error() string {
-	switch {
-	case e.FileError != "":
-		return e.FileError
-	case e.ParseError != "":
-		return e.ParseError
-	default:
-		lines := make([]string, len(e.Errors))
-		for i, ve := range e.Errors {
-			lines[i] = ve.String()
+	var vp versionPeek
+	if err := json.Unmarshal(data, &vp); err != nil {
+		return nil, &LoadError{ParseError: fmt.Sprintf("invalid JSON: %v", err)}
+	}
+
+	switch vp.Version {
+	case "1":
+		m, loadErr := decodeAndValidateV1(data)
+		if loadErr != nil {
+			return nil, loadErr
 		}
-		return strings.Join(lines, "\n")
+		return &Document{V1: m}, nil
+	case "2":
+		m, loadErr := decodeAndValidateV2(data)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		return &Document{V2: m}, nil
+	default:
+		return nil, &LoadError{Errors: []ValidationError{{
+			Kind:    KindInvalidVersion,
+			Primary: vp.Version,
+			Message: fmt.Sprintf(`version must be "1" or "2", got %q`, vp.Version),
+		}}}
 	}
 }
 
-// RenderText renders the error for stderr display.
-func (e *LoadError) RenderText() string {
-	switch {
-	case e.FileError != "":
-		return e.FileError + "\n"
-	case e.ParseError != "":
-		return e.ParseError + "\n"
-	default:
-		var b strings.Builder
-		fmt.Fprintf(&b, "validation failed: %d error(s)\n", len(e.Errors))
-		for _, ve := range e.Errors {
-			b.WriteString(ve.String())
-			b.WriteString("\n")
-		}
-		return b.String()
-	}
-}
-
-var (
-	idRe     = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
-	scopeRe  = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,256}$`)
-	actionRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
-)
-
-// Load reads, parses, and structurally validates the model at path.
-func Load(path string) (*model.Model, *LoadError) {
+// readInputFile applies the same file-access and byte-size bound Load
+// applies (docs/phase-1-plan.md §7.1), independently, so LoadDocument can
+// peek the version before deciding which struct type to decode into.
+func readInputFile(path string) ([]byte, *LoadError) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, &LoadError{FileError: fmt.Sprintf("cannot read input file %q: %v", path, err)}
@@ -138,7 +109,15 @@ func Load(path string) (*model.Model, *LoadError) {
 			fmt.Sprintf("input file size exceeds max_input_file_size (%d bytes)", limits.MaxInputFileSize),
 		)}}
 	}
+	return data, nil
+}
 
+// decodeAndValidateV1 is the version-1 decode+validate path, byte-for-byte
+// the same steps Load performs, reusing the same unmodified validate
+// function. It exists so LoadDocument does not need to re-read the file
+// (readInputFile already ran) to reach the identical result Load(path)
+// would produce.
+func decodeAndValidateV1(data []byte) (*model.Model, *LoadError) {
 	var m model.Model
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -157,14 +136,29 @@ func Load(path string) (*model.Model, *LoadError) {
 	return &m, nil
 }
 
-type nodeInfo struct {
-	kind string // "principal" or "agent"
+func decodeAndValidateV2(data []byte) (*model.ModelV2, *LoadError) {
+	var m model.ModelV2
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&m); err != nil {
+		return nil, &LoadError{ParseError: fmt.Sprintf("invalid JSON: %v", err)}
+	}
+	if dec.More() {
+		return nil, &LoadError{ParseError: "invalid JSON: unexpected trailing content after top-level document"}
+	}
+
+	errs := validateV2(&m)
+	if len(errs) > 0 {
+		sortErrors(errs)
+		return nil, &LoadError{Errors: errs}
+	}
+	return &m, nil
 }
 
-func validate(m *model.Model) []ValidationError {
+func validateV2(m *model.ModelV2) []ValidationError {
 	var errs []ValidationError
 
-	if m.Version != "1" {
+	if m.Version != "2" {
 		errs = append(errs, ValidationError{
 			Kind:    KindInvalidVersion,
 			Primary: m.Version,
@@ -203,7 +197,7 @@ func validate(m *model.Model) []ValidationError {
 	for _, p := range m.Principals {
 		checkID(&errs, "principal", p.ID)
 		registerNode(p.ID, "principal")
-		checkAuthorityScopes(&errs, "principal", p.ID, p.Authority)
+		checkCapabilitySet(&errs, "principal", p.ID, p.Authority)
 	}
 	for _, a := range m.Agents {
 		checkID(&errs, "agent", a.ID)
@@ -246,7 +240,7 @@ func validate(m *model.Model) []ValidationError {
 				Message: fmt.Sprintf("delegation (%q -> %q) authority must be non-empty", d.Delegator, d.Delegatee),
 			})
 		}
-		checkAuthorityScopes(&errs, "delegation", d.Delegator+"->"+d.Delegatee, d.Authority)
+		checkCapabilitySet(&errs, "delegation", d.Delegator+"->"+d.Delegatee, d.Authority)
 
 		pair := [2]string{d.Delegator, d.Delegatee}
 		duplicate := seenPairs[pair]
@@ -274,6 +268,7 @@ func validate(m *model.Model) []ValidationError {
 		}
 		checkAction(&errs, op.Actor, op.Action)
 		checkScope(&errs, "operation.requires", op.Actor+"/"+op.Action, op.Requires)
+		checkTarget(&errs, "operation.target", op.Actor+"/"+op.Action, op.Target)
 	}
 
 	nodeIDs := make([]string, 0, len(nodes))
@@ -302,74 +297,44 @@ func validate(m *model.Model) []ValidationError {
 	return errs
 }
 
-func checkID(errs *[]ValidationError, context, id string) {
-	if !idRe.MatchString(id) {
+// checkTarget mirrors checkID's shape: grammar check, then length bound
+// (docs/phase-2-plan.md §5, §10, §17). A missing target decodes as "",
+// which fails the regex and is reported as invalid_target — the same
+// mechanism Phase 1 uses for missing/empty ids and scopes.
+func checkTarget(errs *[]ValidationError, context, owner, target string) {
+	if !targetRe.MatchString(target) {
 		*errs = append(*errs, ValidationError{
-			Kind: KindInvalidID, Primary: id, Secondary: context,
-			Message: fmt.Sprintf("%s id %q must match ^[A-Za-z0-9_.-]{1,128}$", context, id),
+			Kind: KindInvalidTarget, Primary: owner, Secondary: target,
+			Message: fmt.Sprintf("%s target %q must match ^[A-Za-z0-9_.-]{1,128}$", context, target),
 		})
 		return
 	}
-	if len(id) > limits.MaxIDLength {
-		*errs = append(*errs, resourceLimitErr("max_id_length", id,
-			fmt.Sprintf("%s id %q (%d bytes) exceeds max_id_length (%d bytes)", context, id, len(id), limits.MaxIDLength)))
+	if len(target) > limits.MaxTargetLength {
+		*errs = append(*errs, resourceLimitErr("max_target_length", owner,
+			fmt.Sprintf("%s target %q (%d bytes) exceeds max_target_length (%d bytes)", context, target, len(target), limits.MaxTargetLength)))
 	}
 }
 
-func checkScope(errs *[]ValidationError, context, owner, scope string) {
-	if !scopeRe.MatchString(scope) {
-		*errs = append(*errs, ValidationError{
-			Kind: KindInvalidScope, Primary: owner, Secondary: scope,
-			Message: fmt.Sprintf("%s scope %q must match ^[A-Za-z0-9_.:-]{1,256}$", context, scope),
-		})
-		return
-	}
-	if len(scope) > limits.MaxScopeLength {
-		*errs = append(*errs, resourceLimitErr("max_scope_length", owner,
-			fmt.Sprintf("%s scope %q (%d bytes) exceeds max_scope_length (%d bytes)", context, scope, len(scope), limits.MaxScopeLength)))
-	}
-}
-
-func checkAction(errs *[]ValidationError, owner, action string) {
-	if !actionRe.MatchString(action) {
-		*errs = append(*errs, ValidationError{
-			Kind: KindInvalidAction, Primary: owner, Secondary: action,
-			Message: fmt.Sprintf("operation action %q must match ^[A-Za-z0-9_.-]{1,128}$", action),
-		})
-	}
-}
-
-func checkAuthorityScopes(errs *[]ValidationError, contextKind, ownerID string, scopes []string) {
-	if len(scopes) > limits.MaxAuthoritySetSize {
+// checkCapabilitySet validates one principal's or one delegation edge's
+// capability array: the size bound (reusing MaxAuthoritySetSize, now
+// counting tuples instead of bare scopes, §17), each entry's scope/target
+// grammar, and duplicate (scope, target) tuples within the array (§10) —
+// two entries sharing a scope but differing in target are NOT duplicates.
+func checkCapabilitySet(errs *[]ValidationError, contextKind, ownerID string, caps []model.Capability) {
+	if len(caps) > limits.MaxAuthoritySetSize {
 		*errs = append(*errs, resourceLimitErr("max_authority_set_size", ownerID,
-			fmt.Sprintf("%s %q authority set (%d scopes) exceeds max_authority_set_size (%d)", contextKind, ownerID, len(scopes), limits.MaxAuthoritySetSize)))
+			fmt.Sprintf("%s %q authority set (%d capabilities) exceeds max_authority_set_size (%d)", contextKind, ownerID, len(caps), limits.MaxAuthoritySetSize)))
 	}
-	seen := map[string]bool{}
-	for _, s := range scopes {
-		checkScope(errs, contextKind, ownerID, s)
-		if seen[s] {
+	seen := map[model.Capability]bool{}
+	for _, c := range caps {
+		checkScope(errs, contextKind, ownerID, c.Scope)
+		checkTarget(errs, contextKind, ownerID, c.Target)
+		if seen[c] {
 			*errs = append(*errs, ValidationError{
-				Kind: KindDuplicateScope, Primary: ownerID, Secondary: s,
-				Message: fmt.Sprintf("%s %q authority set contains duplicate scope %q", contextKind, ownerID, s),
+				Kind: KindDuplicateCapability, Primary: ownerID, Secondary: c.Scope + "@" + c.Target,
+				Message: fmt.Sprintf("%s %q authority set contains duplicate capability %s@%s", contextKind, ownerID, c.Scope, c.Target),
 			})
 		}
-		seen[s] = true
+		seen[c] = true
 	}
-}
-
-func resourceLimitErr(limitName, secondary, message string) ValidationError {
-	return ValidationError{Kind: KindResourceLimitExceeded, Primary: limitName, Secondary: secondary, Message: message}
-}
-
-func sortErrors(errs []ValidationError) {
-	sort.SliceStable(errs, func(i, j int) bool {
-		a, b := errs[i], errs[j]
-		if a.Kind != b.Kind {
-			return a.Kind < b.Kind
-		}
-		if a.Primary != b.Primary {
-			return a.Primary < b.Primary
-		}
-		return a.Secondary < b.Secondary
-	})
 }
