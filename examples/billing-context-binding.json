@@ -1,0 +1,20 @@
+{
+  "version": "2",
+  "principals": [
+    { "id": "user", "authority": [
+      { "scope": "billing:read", "target": "billing-service" }
+    ] }
+  ],
+  "agents": [
+    { "id": "billing-agent" }
+  ],
+  "delegations": [
+    { "delegator": "user", "delegatee": "billing-agent", "authority": [
+      { "scope": "billing:read", "target": "billing-service" }
+    ] }
+  ],
+  "operations": [
+    { "actor": "billing-agent", "action": "read-invoice", "requires": "billing:read", "target": "billing-service" },
+    { "actor": "billing-agent", "action": "read-record",  "requires": "billing:read", "target": "payroll-service" }
+  ]
+}

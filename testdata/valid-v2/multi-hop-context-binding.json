@@ -1,0 +1,28 @@
+{
+  "version": "2",
+  "principals": [
+    { "id": "root", "authority": [
+      { "scope": "billing:read", "target": "billing-service" }
+    ] }
+  ],
+  "agents": [
+    { "id": "hop1" },
+    { "id": "hop2" },
+    { "id": "leaf" }
+  ],
+  "delegations": [
+    { "delegator": "root", "delegatee": "hop1", "authority": [
+      { "scope": "billing:read", "target": "billing-service" }
+    ] },
+    { "delegator": "hop1", "delegatee": "hop2", "authority": [
+      { "scope": "billing:read", "target": "billing-service" }
+    ] },
+    { "delegator": "hop2", "delegatee": "leaf", "authority": [
+      { "scope": "billing:read", "target": "billing-service" }
+    ] }
+  ],
+  "operations": [
+    { "actor": "leaf", "action": "read-ok",  "requires": "billing:read", "target": "billing-service" },
+    { "actor": "leaf", "action": "read-bad", "requires": "billing:read", "target": "payroll-service" }
+  ]
+}

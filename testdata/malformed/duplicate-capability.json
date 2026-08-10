@@ -1,0 +1,12 @@
+{
+  "version": "2",
+  "principals": [
+    { "id": "user", "authority": [
+      { "scope": "billing:read", "target": "billing-service" },
+      { "scope": "billing:read", "target": "billing-service" }
+    ] }
+  ],
+  "agents": [],
+  "delegations": [],
+  "operations": []
+}

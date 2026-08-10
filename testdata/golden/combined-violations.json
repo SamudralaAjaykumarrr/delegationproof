@@ -1,0 +1,53 @@
+{
+  "result": "DENY",
+  "findings": [
+    {
+      "violation": "authority_amplification",
+      "point": "operation",
+      "actor": "mid",
+      "action": "op-never-held",
+      "requires": {
+        "scope": "b",
+        "target": "svc-a"
+      },
+      "held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "bound_targets": [],
+      "trace": [
+        "root",
+        "mid",
+        "op-never-held"
+      ],
+      "reason": "b@svc-a was never present in the valid delegation chain reaching mid"
+    },
+    {
+      "violation": "context_binding_violation",
+      "point": "operation",
+      "actor": "mid",
+      "action": "op-wrong-target",
+      "requires": {
+        "scope": "a",
+        "target": "svc-b"
+      },
+      "held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "bound_targets": [
+        "svc-a"
+      ],
+      "trace": [
+        "root",
+        "mid",
+        "op-wrong-target"
+      ],
+      "reason": "a is held by mid only for svc-a, which does not include svc-b"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "version": "2",
+  "principals": [
+    { "id": "user", "authority": [
+      { "scope": "billing:read", "target": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+    ] }
+  ],
+  "agents": [],
+  "delegations": [],
+  "operations": []
+}

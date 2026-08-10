@@ -1,0 +1,30 @@
+{
+  "result": "DENY",
+  "findings": [
+    {
+      "violation": "context_binding_violation",
+      "point": "operation",
+      "actor": "billing-agent",
+      "action": "read-record",
+      "requires": {
+        "scope": "billing:read",
+        "target": "payroll-service"
+      },
+      "held": [
+        {
+          "scope": "billing:read",
+          "target": "billing-service"
+        }
+      ],
+      "bound_targets": [
+        "billing-service"
+      ],
+      "trace": [
+        "user",
+        "billing-agent",
+        "read-record"
+      ],
+      "reason": "billing:read is held by billing-agent only for billing-service, which does not include payroll-service"
+    }
+  ]
+}

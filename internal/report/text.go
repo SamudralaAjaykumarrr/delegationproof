@@ -34,6 +34,24 @@ func RenderText(r Result) string {
 			fmt.Fprintf(&b, "  held:     %s\n", joinOrNone(v.Held, ", "))
 			fmt.Fprintf(&b, "  trace:    %s\n", joinOrNone(v.Trace, " -> "))
 			fmt.Fprintf(&b, "  reason:   %s\n", v.Reason)
+		case CapabilityEdgeFinding:
+			fmt.Fprintf(&b, "[%d] %s (%s)\n", i+1, v.Violation, v.Point)
+			fmt.Fprintf(&b, "  %-14s %s\n", "delegator:", v.Delegator)
+			fmt.Fprintf(&b, "  %-14s %s\n", "delegatee:", v.Delegatee)
+			fmt.Fprintf(&b, "  %-14s %s\n", "declared:", joinCapabilitiesOrNone(v.Declared, ", "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "excess:", joinCapabilitiesOrNone(v.Excess, ", "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "bound targets:", joinOrNone(v.BoundTargets, ", "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "trace:", joinOrNone(v.Trace, " -> "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "reason:", v.Reason)
+		case CapabilityOperationFinding:
+			fmt.Fprintf(&b, "[%d] %s (%s)\n", i+1, v.Violation, v.Point)
+			fmt.Fprintf(&b, "  %-14s %s\n", "actor:", v.Actor)
+			fmt.Fprintf(&b, "  %-14s %s\n", "action:", v.Action)
+			fmt.Fprintf(&b, "  %-14s %s\n", "requires:", v.Requires.String())
+			fmt.Fprintf(&b, "  %-14s %s\n", "held:", joinCapabilitiesOrNone(v.Held, ", "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "bound targets:", joinOrNone(v.BoundTargets, ", "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "trace:", joinOrNone(v.Trace, " -> "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "reason:", v.Reason)
 		}
 	}
 	return b.String()

@@ -102,3 +102,153 @@ scope that is not part of the actor's derived authority — the union of
 scopes from *valid* incoming delegation edges, computed in one topological
 pass over the DAG. An invalid incoming edge contributes nothing to its
 target's derived authority, not even the overlapping part (strict distrust).
+
+---
+
+# Version 2 — capability (scope, target) model
+
+This section documents the input contract for `"version": "2"` documents
+(`docs/phase-2-plan.md` §3–§10). `internal/loader`'s `validateV2` is the sole
+runtime source of truth; this is documentation only. Version-1 documents are
+entirely unaffected by anything in this section — see the version dispatch
+rule below.
+
+## What's new
+
+Phase 2 adds exactly one new atomic concept: **target**, an opaque,
+exact-match label for the destination context a scope is valid against
+(e.g. `"billing-service"`). Authority is no longer a bare scope string; it
+is a **capability**, the ordered pair `(scope, target)`. Everything else
+about the Phase 1 model — the graph shape, strict distrust, deterministic
+ordering, resource bounds — carries over unchanged, generalized from "scope"
+to "capability tuple."
+
+There is no target hierarchy, no wildcard target, no target registry, and no
+new graph entity. A target is a label carried on a capability tuple, nothing
+more (`docs/phase-2-plan.md` §5).
+
+## Top-level document
+
+```json
+{
+  "version": "2",
+  "principals": [ { "id": "...", "authority": [ { "scope": "...", "target": "..." } ] } ],
+  "agents": [ { "id": "..." } ],
+  "delegations": [ { "delegator": "...", "delegatee": "...", "authority": [ { "scope": "...", "target": "..." } ] } ],
+  "operations": [ { "actor": "...", "action": "...", "requires": "...", "target": "..." } ]
+}
+```
+
+Unknown fields anywhere in the document (top-level or nested) are rejected,
+exactly as in version 1.
+
+## Version dispatch
+
+The loader decodes only `{"version": string}` first, permissively, before
+committing to a struct shape. `"1"` routes to the existing, untouched
+version-1 decode+validate path. `"2"` routes to the version-2 path described
+here. Any other value (including absent, which decodes as `""`) is a single
+`invalid_version` error: `version must be "1" or "2", got %q`. The two
+schemas share no internal model type — a version-1 document can never be
+accidentally interpreted with version-2 semantics or vice versa.
+
+## Field rules
+
+| Field | Rule |
+|---|---|
+| `version` | Required. Must equal `"1"` or `"2"`. |
+| `principals[].id` | Same rules as version 1. |
+| `principals[].authority` | Array of capability objects `{"scope": "...", "target": "..."}`. May be empty. No duplicate `(scope, target)` tuples — two entries sharing a scope but differing in target are *not* duplicates. |
+| `agents[].id` | Same rules as version 1. |
+| `agents[]` | Must **not** contain an `authority` key, same as version 1. |
+| `delegations[].delegator` / `.delegatee` | Same rules as version 1. |
+| `delegations[].authority` | Required, non-empty array of capability objects. No duplicate `(scope, target)` tuples. At most one delegation edge per `(delegator, delegatee)` pair. |
+| `operations[].actor` / `.action` | Same rules as version 1. |
+| `operations[].requires` | Required, exactly one scope string (unchanged singular-requires design). |
+| `operations[].target` | Required. Together with `requires`, forms the one capability the operation exercises. |
+
+## Capability tuples
+
+A capability is `{"scope": "...", "target": "..."}`:
+
+- `scope` uses the unchanged version-1 grammar: `^[A-Za-z0-9_.:-]{1,256}$`,
+  exact byte equality, no hierarchy.
+- `target` is a new grammar, matching node-id style rather than scope style:
+  `^[A-Za-z0-9_.-]{1,128}$`. A missing `target` decodes as `""`, which fails
+  this regex and is reported as `invalid_target` — the same mechanism used
+  for missing/empty ids and scopes.
+- The pair is compared by **exact tuple equality only**. `billing:read` for
+  `billing-service` and `billing:read` for `payroll-service` are different,
+  unrelated capabilities with no implied relationship.
+- For display (text output), a capability renders as `scope@target`. `@`
+  appears in neither grammar, so this round-trips unambiguously.
+
+Targets, node ids, and scopes are three independent namespaces that happen
+to share similar grammars. A target string may coincidentally equal an
+existing node id or scope string; this has no special meaning. There is no
+target registry — a target string is valid input as long as it matches the
+grammar; it needs no prior declaration anywhere in the document.
+
+## New structural error kinds
+
+| Kind | When |
+|---|---|
+| `invalid_target` | A `target` fails `^[A-Za-z0-9_.-]{1,128}$` (including a missing/empty target). |
+| `duplicate_capability` | Two entries with the exact same `(scope, target)` pair within one principal's or one edge's `authority` array. |
+
+All version-1 structural error kinds apply unchanged, generalized where the
+shape changed (e.g. "empty authority array" now applies to an array of
+capability objects).
+
+Explicitly **not** a structural error: an "unknown" target (no registry to
+be unknown against), or a delegation/operation whose target doesn't match
+what was actually delegated — that is the semantic finding this phase
+exists to detect (see "The invariants," below), not a `validate`-time
+(exit 2) problem.
+
+## Resource bounds
+
+All version-1 bounds (`internal/limits`) apply unchanged, with "authority
+set" read as "capability set" — `MaxAuthoritySetSize` bounds the number of
+capability *tuples* per principal/edge, not bare scopes. One new bound:
+
+| Limit | Value | Notes |
+|---|---|---|
+| `MaxTargetLength` | 128 bytes | Mirrors `MaxIDLength`; applies to the `target` half of each capability tuple. |
+
+## The invariants
+
+A version-2 document is checked against **both** invariants, via one
+generalized algorithm (capability tuples in place of bare scopes) plus one
+classification step:
+
+- **Authority Non-Amplification** (unchanged from version 1, generalized):
+  a capability is amplified if its *scope* was never validly held under any
+  target.
+- **Context-Binding Preservation** (new): a capability may only be
+  exercised or transmitted for the target it was delegated with. If a
+  node's scope *is* held, but only under a different target than the one
+  attempted, that is a `context_binding_violation`, not amplification.
+
+Classification, for a missing capability `(s, t)`:
+
+```
+heldTargetsForScope = { t' : (s, t') is held }
+heldTargetsForScope == ∅  =>  authority_amplification
+otherwise                 =>  context_binding_violation
+```
+
+For an edge-level finding (which can cover multiple missing capabilities at
+once), if *any* missing capability's scope was never held under any target,
+the whole finding is `authority_amplification` — the more foundational
+problem takes precedence and is never masked by a co-occurring binding
+issue. Only when every missing capability is a pure context mismatch is the
+finding `context_binding_violation`.
+
+Strict distrust is unchanged in spirit: an invalid incoming edge
+contributes **nothing** to the delegatee's derived authority — not the
+tuples that were individually valid, not even tuples sharing a scope with
+something the delegator holds under a different target.
+
+See `docs/phase-2-plan.md` §7, §8, §11 for the full formal statement and
+algorithm.
