@@ -252,3 +252,130 @@ something the delegator holds under a different target.
 
 See `docs/phase-2-plan.md` §7, §8, §11 for the full formal statement and
 algorithm.
+
+---
+
+# Version 3 — requester (confused-deputy) model
+
+This section documents the input contract for `"version": "3"` documents
+(`docs/phase-3-plan.md` §3–§15). `internal/loader`'s `validateV3` is the sole
+runtime source of truth; this is documentation only. Version-1 and
+version-2 documents are entirely unaffected by anything in this section —
+see the version dispatch rule below.
+
+## What's new
+
+Phase 3 adds exactly one new atomic concept: **requester**, a reference to
+an existing principal or agent id — the party an operation is actually
+performed *for*, as opposed to `actor`, the node that performs it. There is
+no new node kind, no new edge kind, no invocation/call graph, and no
+multi-hop request chain: each operation names exactly one requester.
+Principals, agents, delegations, and capability tuples are byte-for-byte
+identical to version 2.
+
+Declaring a requester does not grant it anything and does not change any
+node's Derived Authority — it is checked, never propagated. A requester's
+own authority is computed by the same unmodified algorithm every node's is.
+
+## Top-level document
+
+```json
+{
+  "version": "3",
+  "principals": [ { "id": "...", "authority": [ { "scope": "...", "target": "..." } ] } ],
+  "agents": [ { "id": "..." } ],
+  "delegations": [ { "delegator": "...", "delegatee": "...", "authority": [ { "scope": "...", "target": "..." } ] } ],
+  "operations": [
+    { "actor": "...", "requester": "...", "action": "...", "requires": "...", "target": "..." }
+  ]
+}
+```
+
+Unknown fields anywhere in the document (top-level or nested) are rejected,
+exactly as in versions 1 and 2.
+
+## Version dispatch
+
+`"3"` routes to the version-3 path described here. `"1"` and `"2"` are
+unaffected. Any other value (including absent, which decodes as `""`) is a
+single `invalid_version` error: `` version must be "1", "2", or "3", got %q ``.
+The three schemas share no internal model type.
+
+## Field rules
+
+| Field | Rule |
+|---|---|
+| `version` | Required. Must equal `"1"`, `"2"`, or `"3"`. |
+| `principals[]` / `agents[]` / `delegations[]` | Same rules as version 2. |
+| `operations[].actor` / `.action` / `.requires` / `.target` | Same rules as version 2. |
+| `operations[].requester` | Required. Must reference a known principal or agent id — the same id namespace `actor` draws from. No default, no implicit self-reference: an actor acting on its own behalf must write `"requester"` equal to its own id explicitly. |
+
+`requester == actor` is legal and is the trivial-pass case: both resolve to
+the same Derived Authority lookup, so there is no special-cased code path.
+
+## New structural error kind
+
+| Kind | When |
+|---|---|
+| `unknown_requester` | `requester` does not resolve to a known principal or agent id — mirrors `unknown_actor` exactly. A missing `requester` (decodes as `""`) or a syntactically-malformed one both fall into this same kind; there is no separate "missing field" or "invalid format" kind, identical precedent to how `actor` is handled. |
+
+All version-1/2 structural error kinds apply unchanged.
+
+Explicitly **not** a structural error: a requester that structurally
+resolves to a known node but lacks standing to authorize the operation —
+that is the semantic finding this phase exists to detect (see "The
+invariant," below), never a `validate`-time (exit 2) problem. Two
+operations sharing `actor`/`action`/`requires`/`target` and differing only
+by `requester` are not a duplicate — a real, legitimate case.
+
+## Resource bounds
+
+No new bound. `requester` is a reference to an existing node id, validated
+by the same mechanism (and the same `MaxIDLength`) `actor` already uses. All
+version-1/2 bounds apply unchanged.
+
+## The invariant: Requester Authorization Preservation
+
+A version-3 document is checked against Non-Amplification and
+Context-Binding Preservation exactly as version 2 is, plus one new
+invariant, evaluated only once the actor-side check has already passed:
+
+> For every operation `(actor, requester, action, requires_scope,
+> requires_target)`, let `C = (requires_scope, requires_target)`. If `C ∈
+> DA(actor)`, then it must also hold that `C ∈ DA(requester)`. If not, the
+> operation is a `confused_deputy` finding: a validly-authorized actor is
+> being induced to exercise a capability the requester was never
+> independently granted.
+
+`DA(requester)` is computed exactly like `DA(actor)` — no ancestor
+relationship is required between them; a requester's standing may come from
+anywhere in the graph, independent of the actor's own delegation chain.
+
+**Precedence (deterministic, one finding per operation):**
+
+```
+if C not in DA(actor):
+    classify per version 2's rule -> authority_amplification | context_binding_violation
+    (requester is NOT evaluated)
+elif C in DA(requester):
+    ALLOW, no finding
+else:
+    confused_deputy
+```
+
+An actor-side amplification or binding failure is strictly more
+foundational and is never masked by, or reported alongside, a
+requester-side standing failure for the same operation.
+
+`confused_deputy` is a single violation literal regardless of *why* the
+requester lacks standing (never held the scope at all, vs. held it only for
+a different target) — that finer distinction is carried in `reason` text
+and `requester_bound_targets`, not in the violation literal, so existing
+literals never get overloaded with a second meaning.
+
+Strict distrust is unchanged and requires no new code: an invalid incoming
+edge on the path to a requester contributes nothing to `DA(requester)`,
+exactly as it already contributes nothing to `DA(actor)`.
+
+See `docs/phase-3-plan.md` §7, §8, §11, §12 for the full formal statement,
+precedence algorithm, and classification rule.

@@ -1,0 +1,29 @@
+{
+  "version": "3",
+  "principals": [
+    { "id": "root", "authority": [
+      { "scope": "a", "target": "svc-a" },
+      { "scope": "a", "target": "svc-b" },
+      { "scope": "z", "target": "svc-a" }
+    ] }
+  ],
+  "agents": [
+    { "id": "mid" },
+    { "id": "requester-good" },
+    { "id": "requester-bad-scope" },
+    { "id": "requester-bad-target" }
+  ],
+  "delegations": [
+    { "delegator": "root", "delegatee": "mid", "authority": [ { "scope": "a", "target": "svc-a" } ] },
+    { "delegator": "root", "delegatee": "requester-good", "authority": [ { "scope": "a", "target": "svc-a" } ] },
+    { "delegator": "root", "delegatee": "requester-bad-scope", "authority": [ { "scope": "z", "target": "svc-a" } ] },
+    { "delegator": "root", "delegatee": "requester-bad-target", "authority": [ { "scope": "a", "target": "svc-b" } ] }
+  ],
+  "operations": [
+    { "actor": "mid", "requester": "requester-good", "action": "op-amp", "requires": "never-held-scope", "target": "svc-a" },
+    { "actor": "mid", "requester": "requester-bad-scope", "action": "op-cd-scope", "requires": "a", "target": "svc-a" },
+    { "actor": "mid", "requester": "requester-bad-target", "action": "op-cd-target", "requires": "a", "target": "svc-a" },
+    { "actor": "mid", "requester": "requester-good", "action": "op-ctx", "requires": "a", "target": "svc-b" },
+    { "actor": "mid", "requester": "requester-good", "action": "op-pass", "requires": "a", "target": "svc-a" }
+  ]
+}

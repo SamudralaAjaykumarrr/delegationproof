@@ -1,0 +1,9 @@
+{
+  "version": "3",
+  "principals": [ { "id": "root", "authority": [ { "scope": "read", "target": "svc" } ] } ],
+  "agents": [ { "id": "agent-a" } ],
+  "delegations": [ { "delegator": "root", "delegatee": "agent-a", "authority": [ { "scope": "read", "target": "svc" } ] } ],
+  "operations": [
+    { "actor": "agent-a", "requester": "nonexistent", "action": "do-read", "requires": "read", "target": "svc" }
+  ]
+}

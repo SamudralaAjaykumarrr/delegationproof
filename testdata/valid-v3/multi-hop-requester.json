@@ -1,0 +1,21 @@
+{
+  "version": "3",
+  "principals": [
+    { "id": "root", "authority": [ { "scope": "read", "target": "svc" } ] }
+  ],
+  "agents": [
+    { "id": "hop1" },
+    { "id": "hop2" },
+    { "id": "requester-leaf" },
+    { "id": "actor-agent" }
+  ],
+  "delegations": [
+    { "delegator": "root", "delegatee": "hop1", "authority": [ { "scope": "read", "target": "svc" } ] },
+    { "delegator": "hop1", "delegatee": "hop2", "authority": [ { "scope": "read", "target": "svc" } ] },
+    { "delegator": "hop2", "delegatee": "requester-leaf", "authority": [ { "scope": "read", "target": "svc" } ] },
+    { "delegator": "root", "delegatee": "actor-agent", "authority": [ { "scope": "read", "target": "svc" } ] }
+  ],
+  "operations": [
+    { "actor": "actor-agent", "requester": "requester-leaf", "action": "do-read", "requires": "read", "target": "svc" }
+  ]
+}

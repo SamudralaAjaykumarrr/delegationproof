@@ -1,0 +1,44 @@
+DENY
+4 finding(s)
+
+[1] authority_amplification (operation)
+  actor:         mid
+  action:        op-amp
+  requires:      never-held-scope@svc-a
+  held:          a@svc-a
+  bound targets: (none)
+  trace:         root -> mid -> op-amp
+  reason:        never-held-scope@svc-a was never present in the valid delegation chain reaching mid
+
+[2] confused_deputy (operation)
+  actor:            mid
+  requester:        requester-bad-scope
+  action:           op-cd-scope
+  requires:         a@svc-a
+  actor held:       a@svc-a
+  requester held:   z@svc-a
+  requester bound:  (none)
+  actor trace:      root -> mid -> op-cd-scope
+  requester trace:  root -> requester-bad-scope
+  reason:           op-cd-scope requires a@svc-a, which mid validly holds, but requester requester-bad-scope has never held a under any target — mid is being induced to exercise authority requester-bad-scope was never granted
+
+[3] confused_deputy (operation)
+  actor:            mid
+  requester:        requester-bad-target
+  action:           op-cd-target
+  requires:         a@svc-a
+  actor held:       a@svc-a
+  requester held:   a@svc-b
+  requester bound:  svc-b
+  actor trace:      root -> mid -> op-cd-target
+  requester trace:  root -> requester-bad-target
+  reason:           op-cd-target requires a@svc-a, which mid validly holds, but requester requester-bad-target holds a only for svc-b, which does not include svc-a — mid is being induced to exercise authority requester-bad-target was never granted for this target
+
+[4] context_binding_violation (operation)
+  actor:         mid
+  action:        op-ctx
+  requires:      a@svc-b
+  held:          a@svc-a
+  bound targets: svc-a
+  trace:         root -> mid -> op-ctx
+  reason:        a is held by mid only for svc-a, which does not include svc-b
