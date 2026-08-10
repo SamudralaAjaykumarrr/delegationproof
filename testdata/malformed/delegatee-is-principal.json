@@ -1,0 +1,12 @@
+{
+  "version": "1",
+  "principals": [
+    { "id": "user", "authority": ["billing:read"] },
+    { "id": "admin", "authority": ["billing:read"] }
+  ],
+  "agents": [],
+  "delegations": [
+    { "delegator": "user", "delegatee": "admin", "authority": ["billing:read"] }
+  ],
+  "operations": []
+}

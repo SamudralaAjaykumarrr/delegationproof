@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "principals": [
+    { "id": "root", "authority": ["a:1", "a:2"] }
+  ],
+  "agents": [
+    { "id": "mid" },
+    { "id": "leaf" },
+    { "id": "over" }
+  ],
+  "delegations": [
+    { "delegator": "root", "delegatee": "mid", "authority": ["a:1"] },
+    { "delegator": "mid", "delegatee": "leaf", "authority": ["a:1"] },
+    { "delegator": "mid", "delegatee": "over", "authority": ["a:2"] }
+  ],
+  "operations": [
+    { "actor": "leaf", "action": "task.b", "requires": "a:2" },
+    { "actor": "leaf", "action": "task.a", "requires": "a:1" },
+    { "actor": "mid", "action": "task.c", "requires": "a:2" },
+    { "actor": "mid", "action": "task.c", "requires": "a:1" },
+    { "actor": "over", "action": "task.d", "requires": "a:2" },
+    { "actor": "over", "action": "task.d", "requires": "a:1" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "version": "1",
+  "principals": [
+    { "id": "user", "authority": ["billing:read"] }
+  ],
+  "agents": [],
+  "delegations": [],
+  "operations": [
+    { "actor": "user", "action": "bad action!", "requires": "billing:read" }
+  ]
+}

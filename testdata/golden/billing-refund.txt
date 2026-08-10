@@ -1,0 +1,10 @@
+DENY
+1 finding(s)
+
+[1] authority_amplification (operation)
+  actor:    agent-b
+  action:   billing.refund
+  requires: billing:write
+  held:     billing:read
+  trace:    user -> agent-a -> agent-b -> billing.refund
+  reason:   billing:write was never present in the valid delegation chain reaching agent-b

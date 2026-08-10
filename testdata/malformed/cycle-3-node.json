@@ -1,0 +1,15 @@
+{
+  "version": "1",
+  "principals": [],
+  "agents": [
+    { "id": "agent-a" },
+    { "id": "agent-b" },
+    { "id": "agent-c" }
+  ],
+  "delegations": [
+    { "delegator": "agent-a", "delegatee": "agent-b", "authority": ["x"] },
+    { "delegator": "agent-b", "delegatee": "agent-c", "authority": ["x"] },
+    { "delegator": "agent-c", "delegatee": "agent-a", "authority": ["x"] }
+  ],
+  "operations": []
+}
