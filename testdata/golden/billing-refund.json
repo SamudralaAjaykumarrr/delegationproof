@@ -1,0 +1,22 @@
+{
+  "result": "DENY",
+  "findings": [
+    {
+      "violation": "authority_amplification",
+      "point": "operation",
+      "actor": "agent-b",
+      "action": "billing.refund",
+      "requires": "billing:write",
+      "held": [
+        "billing:read"
+      ],
+      "trace": [
+        "user",
+        "agent-a",
+        "agent-b",
+        "billing.refund"
+      ],
+      "reason": "billing:write was never present in the valid delegation chain reaching agent-b"
+    }
+  ]
+}

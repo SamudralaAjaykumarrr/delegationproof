@@ -1,0 +1,18 @@
+{
+  "version": "1",
+  "principals": [
+    { "id": "user", "authority": ["billing:read", "billing:write"] }
+  ],
+  "agents": [
+    { "id": "agent-a" },
+    { "id": "agent-b" }
+  ],
+  "delegations": [
+    { "delegator": "user", "delegatee": "agent-a", "authority": ["billing:read"] },
+    { "delegator": "agent-a", "delegatee": "agent-b", "authority": ["billing:read"] }
+  ],
+  "operations": [
+    { "actor": "agent-b", "action": "billing.view", "requires": "billing:read" },
+    { "actor": "agent-b", "action": "billing.refund", "requires": "billing:write" }
+  ]
+}

@@ -1,0 +1,42 @@
+DENY
+5 finding(s)
+
+[1] authority_amplification (delegation_edge)
+  delegator: mid
+  delegatee: over
+  declared:  a:2
+  excess:    a:2
+  trace:     root -> mid -> over
+  reason:    mid attempted to delegate a:2, which is not in mid's derived authority
+
+[2] authority_amplification (operation)
+  actor:    leaf
+  action:   task.b
+  requires: a:2
+  held:     a:1
+  trace:    root -> mid -> leaf -> task.b
+  reason:   a:2 was never present in the valid delegation chain reaching leaf
+
+[3] authority_amplification (operation)
+  actor:    mid
+  action:   task.c
+  requires: a:2
+  held:     a:1
+  trace:    root -> mid -> task.c
+  reason:   a:2 was never present in the valid delegation chain reaching mid
+
+[4] authority_amplification (operation)
+  actor:    over
+  action:   task.d
+  requires: a:1
+  held:     (none)
+  trace:    over -> task.d
+  reason:   a:1 was never present in the valid delegation chain reaching over
+
+[5] authority_amplification (operation)
+  actor:    over
+  action:   task.d
+  requires: a:2
+  held:     (none)
+  trace:    over -> task.d
+  reason:   a:2 was never present in the valid delegation chain reaching over
