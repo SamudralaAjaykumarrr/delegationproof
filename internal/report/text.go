@@ -52,6 +52,18 @@ func RenderText(r Result) string {
 			fmt.Fprintf(&b, "  %-14s %s\n", "bound targets:", joinOrNone(v.BoundTargets, ", "))
 			fmt.Fprintf(&b, "  %-14s %s\n", "trace:", joinOrNone(v.Trace, " -> "))
 			fmt.Fprintf(&b, "  %-14s %s\n", "reason:", v.Reason)
+		case ConfusedDeputyFinding:
+			fmt.Fprintf(&b, "[%d] %s (%s)\n", i+1, v.Violation, v.Point)
+			fmt.Fprintf(&b, "  %-17s %s\n", "actor:", v.Actor)
+			fmt.Fprintf(&b, "  %-17s %s\n", "requester:", v.Requester)
+			fmt.Fprintf(&b, "  %-17s %s\n", "action:", v.Action)
+			fmt.Fprintf(&b, "  %-17s %s\n", "requires:", v.Requires.String())
+			fmt.Fprintf(&b, "  %-17s %s\n", "actor held:", joinCapabilitiesOrNone(v.ActorHeld, ", "))
+			fmt.Fprintf(&b, "  %-17s %s\n", "requester held:", joinCapabilitiesOrNone(v.RequesterHeld, ", "))
+			fmt.Fprintf(&b, "  %-17s %s\n", "requester bound:", joinOrNone(v.RequesterBoundTargets, ", "))
+			fmt.Fprintf(&b, "  %-17s %s\n", "actor trace:", joinOrNone(v.ActorTrace, " -> "))
+			fmt.Fprintf(&b, "  %-17s %s\n", "requester trace:", joinOrNone(v.RequesterTrace, " -> "))
+			fmt.Fprintf(&b, "  %-17s %s\n", "reason:", v.Reason)
 		}
 	}
 	return b.String()

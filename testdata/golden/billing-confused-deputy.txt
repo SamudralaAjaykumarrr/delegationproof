@@ -1,0 +1,14 @@
+DENY
+1 finding(s)
+
+[1] confused_deputy (operation)
+  actor:            billing-agent
+  requester:        support-agent
+  action:           refund-b
+  requires:         billing:refund@billing-service
+  actor held:       billing:refund@billing-service
+  requester held:   billing:read@billing-service
+  requester bound:  (none)
+  actor trace:      admin -> billing-agent -> refund-b
+  requester trace:  admin -> support-agent
+  reason:           refund-b requires billing:refund@billing-service, which billing-agent validly holds, but requester support-agent has never held billing:refund under any target — billing-agent is being induced to exercise authority support-agent was never granted

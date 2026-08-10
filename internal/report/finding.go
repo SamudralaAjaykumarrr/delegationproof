@@ -99,29 +99,37 @@ func nonNil(s []string) []string {
 }
 
 // sortKey is the total order defined in §8 step 4, extended by
-// docs/phase-2-plan.md §12 with a trailing target field:
-// (point, subject_id, secondary_id_or_action, scope, target). For any
-// Phase-1-shaped finding, target is always "", so this is a strict
-// extension of Phase 1's 4-tuple order — it degenerates to exactly the
-// original order whenever target is uniformly empty.
+// docs/phase-2-plan.md §12 with a trailing target field, and by
+// docs/phase-3-plan.md §21 with a further-trailing requester field:
+// (point, subject_id, secondary_id_or_action, scope, target, requester).
+// For any Phase-1-shaped finding, target and requester are always "", and
+// for any Phase-1/2-shaped finding requester is always "" — so this is a
+// strict extension of the prior order: it degenerates to exactly the
+// original order whenever the trailing field(s) are uniformly empty.
+// requester is needed because two version-3 operations can legitimately
+// share (actor, action, requires.Scope, requires.Target) and differ only by
+// requester (docs/phase-3-plan.md §22).
 type sortKey struct {
 	point     string
 	subject   string
 	secondary string
 	scope     string
 	target    string
+	requester string
 }
 
 func keyOf(f interface{}) sortKey {
 	switch v := f.(type) {
 	case EdgeFinding:
-		return sortKey{v.Point, v.Delegator, v.Delegatee, "", ""}
+		return sortKey{point: v.Point, subject: v.Delegator, secondary: v.Delegatee}
 	case OperationFinding:
-		return sortKey{v.Point, v.Actor, v.Action, v.Requires, ""}
+		return sortKey{point: v.Point, subject: v.Actor, secondary: v.Action, scope: v.Requires}
 	case CapabilityEdgeFinding:
-		return sortKey{v.Point, v.Delegator, v.Delegatee, "", ""}
+		return sortKey{point: v.Point, subject: v.Delegator, secondary: v.Delegatee}
 	case CapabilityOperationFinding:
-		return sortKey{v.Point, v.Actor, v.Action, v.Requires.Scope, v.Requires.Target}
+		return sortKey{point: v.Point, subject: v.Actor, secondary: v.Action, scope: v.Requires.Scope, target: v.Requires.Target}
+	case ConfusedDeputyFinding:
+		return sortKey{point: v.Point, subject: v.Actor, secondary: v.Action, scope: v.Requires.Scope, target: v.Requires.Target, requester: v.Requester}
 	default:
 		panic(fmt.Sprintf("report: unknown finding type %T", f))
 	}
@@ -140,7 +148,10 @@ func less(a, b sortKey) bool {
 	if a.scope != b.scope {
 		return a.scope < b.scope
 	}
-	return a.target < b.target
+	if a.target != b.target {
+		return a.target < b.target
+	}
+	return a.requester < b.requester
 }
 
 // Sort orders findings (a mix of EdgeFinding and OperationFinding values) in

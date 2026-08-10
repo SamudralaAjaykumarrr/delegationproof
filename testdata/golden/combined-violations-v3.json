@@ -1,0 +1,123 @@
+{
+  "result": "DENY",
+  "findings": [
+    {
+      "violation": "authority_amplification",
+      "point": "operation",
+      "actor": "mid",
+      "action": "op-amp",
+      "requires": {
+        "scope": "never-held-scope",
+        "target": "svc-a"
+      },
+      "held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "bound_targets": [],
+      "trace": [
+        "root",
+        "mid",
+        "op-amp"
+      ],
+      "reason": "never-held-scope@svc-a was never present in the valid delegation chain reaching mid"
+    },
+    {
+      "violation": "confused_deputy",
+      "point": "operation",
+      "actor": "mid",
+      "requester": "requester-bad-scope",
+      "action": "op-cd-scope",
+      "requires": {
+        "scope": "a",
+        "target": "svc-a"
+      },
+      "actor_held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "requester_held": [
+        {
+          "scope": "z",
+          "target": "svc-a"
+        }
+      ],
+      "requester_bound_targets": [],
+      "actor_trace": [
+        "root",
+        "mid",
+        "op-cd-scope"
+      ],
+      "requester_trace": [
+        "root",
+        "requester-bad-scope"
+      ],
+      "reason": "op-cd-scope requires a@svc-a, which mid validly holds, but requester requester-bad-scope has never held a under any target — mid is being induced to exercise authority requester-bad-scope was never granted"
+    },
+    {
+      "violation": "confused_deputy",
+      "point": "operation",
+      "actor": "mid",
+      "requester": "requester-bad-target",
+      "action": "op-cd-target",
+      "requires": {
+        "scope": "a",
+        "target": "svc-a"
+      },
+      "actor_held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "requester_held": [
+        {
+          "scope": "a",
+          "target": "svc-b"
+        }
+      ],
+      "requester_bound_targets": [
+        "svc-b"
+      ],
+      "actor_trace": [
+        "root",
+        "mid",
+        "op-cd-target"
+      ],
+      "requester_trace": [
+        "root",
+        "requester-bad-target"
+      ],
+      "reason": "op-cd-target requires a@svc-a, which mid validly holds, but requester requester-bad-target holds a only for svc-b, which does not include svc-a — mid is being induced to exercise authority requester-bad-target was never granted for this target"
+    },
+    {
+      "violation": "context_binding_violation",
+      "point": "operation",
+      "actor": "mid",
+      "action": "op-ctx",
+      "requires": {
+        "scope": "a",
+        "target": "svc-b"
+      },
+      "held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "bound_targets": [
+        "svc-a"
+      ],
+      "trace": [
+        "root",
+        "mid",
+        "op-ctx"
+      ],
+      "reason": "a is held by mid only for svc-a, which does not include svc-b"
+    }
+  ]
+}

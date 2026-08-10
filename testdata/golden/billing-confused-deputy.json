@@ -1,0 +1,39 @@
+{
+  "result": "DENY",
+  "findings": [
+    {
+      "violation": "confused_deputy",
+      "point": "operation",
+      "actor": "billing-agent",
+      "requester": "support-agent",
+      "action": "refund-b",
+      "requires": {
+        "scope": "billing:refund",
+        "target": "billing-service"
+      },
+      "actor_held": [
+        {
+          "scope": "billing:refund",
+          "target": "billing-service"
+        }
+      ],
+      "requester_held": [
+        {
+          "scope": "billing:read",
+          "target": "billing-service"
+        }
+      ],
+      "requester_bound_targets": [],
+      "actor_trace": [
+        "admin",
+        "billing-agent",
+        "refund-b"
+      ],
+      "requester_trace": [
+        "admin",
+        "support-agent"
+      ],
+      "reason": "refund-b requires billing:refund@billing-service, which billing-agent validly holds, but requester support-agent has never held billing:refund under any target — billing-agent is being induced to exercise authority support-agent was never granted"
+    }
+  ]
+}

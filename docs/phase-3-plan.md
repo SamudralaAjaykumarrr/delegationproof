@@ -841,9 +841,9 @@ matching the task's §15 scenario exactly, deliberately small):
   validly holds `billing:refund@billing-service` (identical actor-side
   check, same result). `support-agent` only ever received
   `billing:read@billing-service` — `C ∉ DA(support-agent)`. **Fails**:
-  `confused_deputy`, with `requester_bound_targets = ["billing-service"]`
-  (support-agent does hold *some* capability for that target, just not
-  this scope) and `requester_trace = ["admin", "support-agent"]`.
+  `confused_deputy`, with `requester_bound_targets = []`
+  (support-agent never holds `billing:refund` under any target) and
+  `requester_trace = ["admin", "support-agent"]`.
 
 This single file demonstrates: a legitimate root-requester operation, and
 a confused-deputy violation, using the same actor and the same nominal

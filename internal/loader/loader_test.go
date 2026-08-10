@@ -81,6 +81,14 @@ func TestMalformedFixtures(t *testing.T) {
 		{"missing-target.json", true, ""},
 		{"duplicate-capability.json", true, ""},
 		{"target-exceeds-max-length.json", true, ""},
+		// Version-3 fixtures (docs/phase-3-plan.md §15): Load is the
+		// version-1-only decode path, so a v3 document's "requester"/
+		// "target" operation fields are unknown fields to model.Operation
+		// — a ParseError, not a specific ErrorKind. The version-3-aware
+		// assertions for these same fixtures (exact ErrorKind via
+		// LoadDocument) live in loader_v3_test.go.
+		{"unknown-requester.json", true, ""},
+		{"missing-requester.json", true, ""},
 	}
 
 	dir := filepath.Join(testdataRoot, "malformed")
