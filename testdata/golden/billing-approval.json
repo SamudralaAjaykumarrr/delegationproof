@@ -1,0 +1,23 @@
+{
+  "result": "DENY",
+  "findings": [
+    {
+      "violation": "approval_missing",
+      "point": "operation",
+      "actor": "billing-agent",
+      "requester": "admin",
+      "action": "void-unapproved",
+      "requires": {
+        "scope": "billing:void",
+        "target": "billing-service"
+      },
+      "declared_approvers": [],
+      "trace": [
+        "admin",
+        "billing-agent",
+        "void-unapproved"
+      ],
+      "reason": "void-unapproved requires billing:void@billing-service, which billing-agent validly holds and admin is authorized to request, but billing:void@billing-service requires approval and no approval has been declared for it"
+    }
+  ]
+}

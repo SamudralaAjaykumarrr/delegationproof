@@ -1,0 +1,30 @@
+{
+  "version": "5",
+  "operations": [
+    { "actor": "agent-b", "requester": "root-b", "action": "do-write", "requires": "write", "target": "svc-b" },
+    { "actor": "agent-a", "requester": "root-a", "action": "do-list",  "requires": "list",  "target": "svc-a" },
+    { "actor": "agent-a", "requester": "root-a", "action": "do-read",  "requires": "read",  "target": "svc-a" }
+  ],
+  "approvals": [
+    { "approver": "approver-p", "scope": "list", "target": "svc-a" }
+  ],
+  "delegations": [
+    { "delegator": "root-b", "delegatee": "agent-b", "authority": [ { "scope": "write", "target": "svc-b" } ] },
+    { "delegator": "root-a", "delegatee": "agent-a", "authority": [
+      { "scope": "list", "target": "svc-a" },
+      { "scope": "read", "target": "svc-a" }
+    ] }
+  ],
+  "agents": [
+    { "id": "agent-b" },
+    { "id": "agent-a" }
+  ],
+  "principals": [
+    { "id": "approver-p", "authority": [ { "scope": "list", "target": "svc-a", "max_delegation_depth": 0, "requires_approval": true } ] },
+    { "id": "root-b", "authority": [ { "scope": "write", "target": "svc-b", "max_delegation_depth": 1, "requires_approval": false } ] },
+    { "id": "root-a", "authority": [
+      { "scope": "list", "target": "svc-a", "max_delegation_depth": 5, "requires_approval": true },
+      { "scope": "read", "target": "svc-a", "max_delegation_depth": 2, "requires_approval": false }
+    ] }
+  ]
+}

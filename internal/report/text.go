@@ -72,6 +72,15 @@ func RenderText(r Result) string {
 			fmt.Fprintf(&b, "  %-14s %s\n", "excess:", joinDepthExcessOrNone(v.Excess, ", "))
 			fmt.Fprintf(&b, "  %-14s %s\n", "trace:", joinOrNone(v.Trace, " -> "))
 			fmt.Fprintf(&b, "  %-14s %s\n", "reason:", v.Reason)
+		case ApprovalFinding:
+			fmt.Fprintf(&b, "[%d] %s (%s)\n", i+1, v.Violation, v.Point)
+			fmt.Fprintf(&b, "  %-20s %s\n", "actor:", v.Actor)
+			fmt.Fprintf(&b, "  %-20s %s\n", "requester:", v.Requester)
+			fmt.Fprintf(&b, "  %-20s %s\n", "action:", v.Action)
+			fmt.Fprintf(&b, "  %-20s %s\n", "requires:", v.Requires.String())
+			fmt.Fprintf(&b, "  %-20s %s\n", "declared approvers:", joinOrNone(v.DeclaredApprovers, ", "))
+			fmt.Fprintf(&b, "  %-20s %s\n", "trace:", joinOrNone(v.Trace, " -> "))
+			fmt.Fprintf(&b, "  %-20s %s\n", "reason:", v.Reason)
 		}
 	}
 	return b.String()

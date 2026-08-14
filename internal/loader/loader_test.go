@@ -102,6 +102,20 @@ func TestMalformedFixtures(t *testing.T) {
 		{"duplicate-root-capability-different-depths.json", true, ""},
 		{"depth-field-on-delegation.json", true, ""},
 		{"depth-field-on-operation.json", true, ""},
+		// Version-5 fixtures (docs/phase-5-plan.md §16): Load is the
+		// version-1-only decode path, so a v5 document's object-shaped
+		// authority entries and its new top-level "approvals" array are
+		// unknown/mismatched fields to model.Model — a ParseError, not a
+		// specific ErrorKind. The version-5-aware assertions for these
+		// same fixtures (exact ErrorKind via LoadDocument) live in
+		// loader_v5_test.go.
+		{"missing-approval-requirement.json", true, ""},
+		{"non-boolean-approval-requirement.json", true, ""},
+		{"unknown-approver.json", true, ""},
+		{"duplicate-approval.json", true, ""},
+		{"approval-field-on-delegation.json", true, ""},
+		{"approval-field-on-operation.json", true, ""},
+		{"duplicate-root-capability-different-approval.json", true, ""},
 	}
 
 	dir := filepath.Join(testdataRoot, "malformed")

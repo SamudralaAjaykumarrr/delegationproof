@@ -48,4 +48,12 @@ var (
 	// independent var, not an alias, so a test can lower one without
 	// perturbing the other.
 	MaxDelegationDepth = 64
+
+	// MaxApprovals is the maximum number of entries in a version-5
+	// document's top-level approvals array (docs/phase-5-plan.md §21).
+	// approvals is a new, independent top-level array, not nested inside
+	// any existing bounded collection, so it needs its own bound rather
+	// than reusing MaxAuthoritySetSize or MaxOperations. Mirrors
+	// MaxOperations's value and role.
+	MaxApprovals = 10000
 )

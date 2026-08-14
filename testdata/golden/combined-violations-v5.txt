@@ -1,0 +1,79 @@
+DENY
+8 finding(s)
+
+[1] delegation_depth_violation (delegation_edge)
+  delegator:     billing-agent
+  delegatee:     support-agent
+  declared:      billing:refund@billing-service
+  excess:        billing:refund@billing-service (configured max: 1, remaining: 0)
+  trace:         admin -> billing-agent -> support-agent
+  reason:        billing-agent attempted to delegate billing:refund@billing-service to support-agent, but billing-agent's remaining delegation budget for this capability is 0 (configured maximum: 1) — it may no longer be redelegated
+
+[2] approval_missing (operation)
+  actor:               approval-agent
+  requester:           root
+  action:              op-approval-missing
+  requires:            approval-req@svc-a
+  declared approvers:  (none)
+  trace:               root -> approval-agent -> op-approval-missing
+  reason:              op-approval-missing requires approval-req@svc-a, which approval-agent validly holds and root is authorized to request, but approval-req@svc-a requires approval and no approval has been declared for it
+
+[3] approval_unauthorized (operation)
+  actor:               approval-agent
+  requester:           root
+  action:              op-approval-unauthorized
+  requires:            approval-req2@svc-a
+  declared approvers:  non-standing-approver
+  trace:               root -> approval-agent -> op-approval-unauthorized
+  reason:              op-approval-unauthorized requires approval-req2@svc-a, which requires approval; approval was declared by [non-standing-approver], but none of them independently hold approval-req2@svc-a — an approval must come from a party with standing over the capability being approved
+
+[4] authority_amplification (operation)
+  actor:         mid
+  action:        op-amp
+  requires:      never-held-scope@svc-a
+  held:          a@svc-a
+  bound targets: (none)
+  trace:         root -> mid -> op-amp
+  reason:        never-held-scope@svc-a was never present in the valid delegation chain reaching mid
+
+[5] confused_deputy (operation)
+  actor:            mid
+  requester:        requester-bad-scope
+  action:           op-cd-scope
+  requires:         a@svc-a
+  actor held:       a@svc-a
+  requester held:   z@svc-a
+  requester bound:  (none)
+  actor trace:      root -> mid -> op-cd-scope
+  requester trace:  root -> requester-bad-scope
+  reason:           op-cd-scope requires a@svc-a, which mid validly holds, but requester requester-bad-scope has never held a under any target — mid is being induced to exercise authority requester-bad-scope was never granted
+
+[6] confused_deputy (operation)
+  actor:            mid
+  requester:        requester-bad-target
+  action:           op-cd-target
+  requires:         a@svc-a
+  actor held:       a@svc-a
+  requester held:   a@svc-b
+  requester bound:  svc-b
+  actor trace:      root -> mid -> op-cd-target
+  requester trace:  root -> requester-bad-target
+  reason:           op-cd-target requires a@svc-a, which mid validly holds, but requester requester-bad-target holds a only for svc-b, which does not include svc-a — mid is being induced to exercise authority requester-bad-target was never granted for this target
+
+[7] context_binding_violation (operation)
+  actor:         mid
+  action:        op-ctx
+  requires:      a@svc-b
+  held:          a@svc-a
+  bound targets: svc-a
+  trace:         root -> mid -> op-ctx
+  reason:        a is held by mid only for svc-a, which does not include svc-b
+
+[8] authority_amplification (operation)
+  actor:         support-agent
+  action:        refund-deep
+  requires:      billing:refund@billing-service
+  held:          (none)
+  bound targets: (none)
+  trace:         support-agent -> refund-deep
+  reason:        billing:refund@billing-service was never present in the valid delegation chain reaching support-agent
