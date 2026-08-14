@@ -1,17 +1,14 @@
-// Version-2 loading: the version-peek dispatch mechanism and structural
-// validation for version-2 documents (docs/phase-2-plan.md §9, §10). This
-// file is purely additive to loader.go: Load/validate (the version-1 path)
-// are not called from here except where explicitly noted, and are not
-// modified by anything in this file.
+// Version-4 loading: structural validation for version-4 documents
+// (docs/phase-4-plan.md §5, §6, §17). This file is purely additive: the
+// version-1/2/3 decode+validate paths (loader.go, loader_v2.go, loader_v3.go)
+// are not modified by anything in this file except the three sanctioned
+// invalid_version message-text touches already made in those files.
 package loader
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -20,120 +17,16 @@ import (
 	"github.com/SamudralaAjaykumarrr/delegationproof/internal/model"
 )
 
-var targetRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+// KindInvalidDelegationDepth is the one new version-4 structural error kind
+// (docs/phase-4-plan.md §17): a RootCapability's max_delegation_depth is
+// either absent (decodes as a nil *int) or present but negative. Both share
+// one kind, mirroring how unknown_requester already covers both "missing"
+// and "malformed" for a single underlying reason
+// (docs/phase-3-plan.md §15).
+const KindInvalidDelegationDepth ErrorKind = "invalid_delegation_depth"
 
-// Document is the result of a version-dispatched load (§9,
-// docs/phase-3-plan.md §5, docs/phase-4-plan.md §5): exactly one of
-// V1/V2/V3/V4 is set on success.
-type Document struct {
-	V1 *model.Model
-	V2 *model.ModelV2
-	V3 *model.ModelV3
-	V4 *model.ModelV4
-}
-
-// versionPeek decodes only the "version" field, permissively, ignoring
-// every other top-level key and imposing no field-shape requirements — it
-// exists solely to read the version literal before committing to a struct
-// shape (§9 step 2).
-type versionPeek struct {
-	Version string `json:"version"`
-}
-
-// LoadDocument reads, version-dispatches, and structurally validates the
-// model at path (§9). A version literal of "1" routes through the
-// existing, untouched v1 decode+validate path; "2" routes through the new
-// v2 path; anything else (including absent, which decodes as "") is a
-// single invalid_version validation error.
-func LoadDocument(path string) (*Document, *LoadError) {
-	data, loadErr := readInputFile(path)
-	if loadErr != nil {
-		return nil, loadErr
-	}
-
-	var vp versionPeek
-	if err := json.Unmarshal(data, &vp); err != nil {
-		return nil, &LoadError{ParseError: fmt.Sprintf("invalid JSON: %v", err)}
-	}
-
-	switch vp.Version {
-	case "1":
-		m, loadErr := decodeAndValidateV1(data)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		return &Document{V1: m}, nil
-	case "2":
-		m, loadErr := decodeAndValidateV2(data)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		return &Document{V2: m}, nil
-	case "3":
-		m, loadErr := decodeAndValidateV3(data)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		return &Document{V3: m}, nil
-	case "4":
-		m, loadErr := decodeAndValidateV4(data)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		return &Document{V4: m}, nil
-	default:
-		return nil, &LoadError{Errors: []ValidationError{{
-			Kind:    KindInvalidVersion,
-			Primary: vp.Version,
-			Message: fmt.Sprintf(`version must be "1", "2", "3", or "4", got %q`, vp.Version),
-		}}}
-	}
-}
-
-// readInputFile applies the same file-access and byte-size bound Load
-// applies (docs/phase-1-plan.md §7.1), independently, so LoadDocument can
-// peek the version before deciding which struct type to decode into.
-func readInputFile(path string) ([]byte, *LoadError) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, &LoadError{FileError: fmt.Sprintf("cannot read input file %q: %v", path, err)}
-	}
-	if info.IsDir() {
-		return nil, &LoadError{FileError: fmt.Sprintf("input path %q is a directory, not a file", path)}
-	}
-	if info.Size() > limits.MaxInputFileSize {
-		return nil, &LoadError{Errors: []ValidationError{resourceLimitErr(
-			"max_input_file_size", "",
-			fmt.Sprintf("input file size %d bytes exceeds max_input_file_size (%d bytes)", info.Size(), limits.MaxInputFileSize),
-		)}}
-	}
-
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, &LoadError{FileError: fmt.Sprintf("cannot read input file %q: %v", path, err)}
-	}
-	defer f.Close()
-
-	data, err := io.ReadAll(io.LimitReader(f, limits.MaxInputFileSize+1))
-	if err != nil {
-		return nil, &LoadError{FileError: fmt.Sprintf("cannot read input file %q: %v", path, err)}
-	}
-	if int64(len(data)) > limits.MaxInputFileSize {
-		return nil, &LoadError{Errors: []ValidationError{resourceLimitErr(
-			"max_input_file_size", "",
-			fmt.Sprintf("input file size exceeds max_input_file_size (%d bytes)", limits.MaxInputFileSize),
-		)}}
-	}
-	return data, nil
-}
-
-// decodeAndValidateV1 is the version-1 decode+validate path, byte-for-byte
-// the same steps Load performs, reusing the same unmodified validate
-// function. It exists so LoadDocument does not need to re-read the file
-// (readInputFile already ran) to reach the identical result Load(path)
-// would produce.
-func decodeAndValidateV1(data []byte) (*model.Model, *LoadError) {
-	var m model.Model
+func decodeAndValidateV4(data []byte) (*model.ModelV4, *LoadError) {
+	var m model.ModelV4
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&m); err != nil {
@@ -143,7 +36,7 @@ func decodeAndValidateV1(data []byte) (*model.Model, *LoadError) {
 		return nil, &LoadError{ParseError: "invalid JSON: unexpected trailing content after top-level document"}
 	}
 
-	errs := validate(&m)
+	errs := validateV4(&m)
 	if len(errs) > 0 {
 		sortErrors(errs)
 		return nil, &LoadError{Errors: errs}
@@ -151,29 +44,15 @@ func decodeAndValidateV1(data []byte) (*model.Model, *LoadError) {
 	return &m, nil
 }
 
-func decodeAndValidateV2(data []byte) (*model.ModelV2, *LoadError) {
-	var m model.ModelV2
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&m); err != nil {
-		return nil, &LoadError{ParseError: fmt.Sprintf("invalid JSON: %v", err)}
-	}
-	if dec.More() {
-		return nil, &LoadError{ParseError: "invalid JSON: unexpected trailing content after top-level document"}
-	}
-
-	errs := validateV2(&m)
-	if len(errs) > 0 {
-		sortErrors(errs)
-		return nil, &LoadError{Errors: errs}
-	}
-	return &m, nil
-}
-
-func validateV2(m *model.ModelV2) []ValidationError {
+// validateV4 is byte-for-byte the same structural checks validateV3
+// performs (agents/delegations/operations are identical in shape to their
+// v3 counterparts), except principals' capability sets are validated via
+// checkRootCapabilitySet instead of checkCapabilitySet, to additionally
+// check each entry's MaxDelegationDepth (§6, §17).
+func validateV4(m *model.ModelV4) []ValidationError {
 	var errs []ValidationError
 
-	if m.Version != "2" {
+	if m.Version != "4" {
 		errs = append(errs, ValidationError{
 			Kind:    KindInvalidVersion,
 			Primary: m.Version,
@@ -212,7 +91,7 @@ func validateV2(m *model.ModelV2) []ValidationError {
 	for _, p := range m.Principals {
 		checkID(&errs, "principal", p.ID)
 		registerNode(p.ID, "principal")
-		checkCapabilitySet(&errs, "principal", p.ID, p.Authority)
+		checkRootCapabilitySet(&errs, "principal", p.ID, p.Authority)
 	}
 	for _, a := range m.Agents {
 		checkID(&errs, "agent", a.ID)
@@ -281,6 +160,12 @@ func validateV2(m *model.ModelV2) []ValidationError {
 				Message: fmt.Sprintf("operation actor %q is not a known node id", op.Actor),
 			})
 		}
+		if _, ok := nodes[op.Requester]; !ok {
+			errs = append(errs, ValidationError{
+				Kind: KindUnknownRequester, Primary: op.Requester, Secondary: op.Action,
+				Message: fmt.Sprintf("operation requester %q is not a known node id", op.Requester),
+			})
+		}
 		checkAction(&errs, op.Actor, op.Action)
 		checkScope(&errs, "operation.requires", op.Actor+"/"+op.Action, op.Requires)
 		checkTarget(&errs, "operation.target", op.Actor+"/"+op.Action, op.Target)
@@ -312,30 +197,16 @@ func validateV2(m *model.ModelV2) []ValidationError {
 	return errs
 }
 
-// checkTarget mirrors checkID's shape: grammar check, then length bound
-// (docs/phase-2-plan.md §5, §10, §17). A missing target decodes as "",
-// which fails the regex and is reported as invalid_target — the same
-// mechanism Phase 1 uses for missing/empty ids and scopes.
-func checkTarget(errs *[]ValidationError, context, owner, target string) {
-	if !targetRe.MatchString(target) {
-		*errs = append(*errs, ValidationError{
-			Kind: KindInvalidTarget, Primary: owner, Secondary: target,
-			Message: fmt.Sprintf("%s target %q must match ^[A-Za-z0-9_.-]{1,128}$", context, target),
-		})
-		return
-	}
-	if len(target) > limits.MaxTargetLength {
-		*errs = append(*errs, resourceLimitErr("max_target_length", owner,
-			fmt.Sprintf("%s target %q (%d bytes) exceeds max_target_length (%d bytes)", context, target, len(target), limits.MaxTargetLength)))
-	}
-}
-
-// checkCapabilitySet validates one principal's or one delegation edge's
-// capability array: the size bound (reusing MaxAuthoritySetSize, now
-// counting tuples instead of bare scopes, §17), each entry's scope/target
-// grammar, and duplicate (scope, target) tuples within the array (§10) —
-// two entries sharing a scope but differing in target are NOT duplicates.
-func checkCapabilitySet(errs *[]ValidationError, contextKind, ownerID string, caps []model.Capability) {
+// checkRootCapabilitySet validates one principal's root capability array
+// (docs/phase-4-plan.md §6, §17): the size bound and (scope, target)
+// grammar/duplicate checks exactly as checkCapabilitySet already performs
+// (duplicate detection is projected onto (scope, target) only — two entries
+// sharing that pair are a duplicate_capability regardless of whether their
+// max_delegation_depth values agree, §17), plus each entry's
+// MaxDelegationDepth: nil (missing) or negative is invalid_delegation_depth;
+// a present, non-negative value exceeding limits.MaxDelegationDepth is a
+// resource_limit_exceeded error, reusing the existing generic mechanism.
+func checkRootCapabilitySet(errs *[]ValidationError, contextKind, ownerID string, caps []model.RootCapability) {
 	if len(caps) > limits.MaxAuthoritySetSize {
 		*errs = append(*errs, resourceLimitErr("max_authority_set_size", ownerID,
 			fmt.Sprintf("%s %q authority set (%d capabilities) exceeds max_authority_set_size (%d)", contextKind, ownerID, len(caps), limits.MaxAuthoritySetSize)))
@@ -344,12 +215,30 @@ func checkCapabilitySet(errs *[]ValidationError, contextKind, ownerID string, ca
 	for _, c := range caps {
 		checkScope(errs, contextKind, ownerID, c.Scope)
 		checkTarget(errs, contextKind, ownerID, c.Target)
-		if seen[c] {
+
+		key := model.Capability{Scope: c.Scope, Target: c.Target}
+		if seen[key] {
 			*errs = append(*errs, ValidationError{
 				Kind: KindDuplicateCapability, Primary: ownerID, Secondary: c.Scope + "@" + c.Target,
 				Message: fmt.Sprintf("%s %q authority set contains duplicate capability %s@%s", contextKind, ownerID, c.Scope, c.Target),
 			})
 		}
-		seen[c] = true
+		seen[key] = true
+
+		switch {
+		case c.MaxDelegationDepth == nil:
+			*errs = append(*errs, ValidationError{
+				Kind: KindInvalidDelegationDepth, Primary: ownerID, Secondary: c.Scope + "@" + c.Target,
+				Message: fmt.Sprintf("%s %q capability %s@%s is missing required field max_delegation_depth", contextKind, ownerID, c.Scope, c.Target),
+			})
+		case *c.MaxDelegationDepth < 0:
+			*errs = append(*errs, ValidationError{
+				Kind: KindInvalidDelegationDepth, Primary: ownerID, Secondary: c.Scope + "@" + c.Target,
+				Message: fmt.Sprintf("%s %q capability %s@%s max_delegation_depth %d must not be negative", contextKind, ownerID, c.Scope, c.Target, *c.MaxDelegationDepth),
+			})
+		case *c.MaxDelegationDepth > limits.MaxDelegationDepth:
+			*errs = append(*errs, resourceLimitErr("max_delegation_depth", ownerID,
+				fmt.Sprintf("%s %q capability %s@%s max_delegation_depth %d exceeds max_delegation_depth (%d)", contextKind, ownerID, c.Scope, c.Target, *c.MaxDelegationDepth, limits.MaxDelegationDepth)))
+		}
 	}
 }

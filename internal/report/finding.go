@@ -130,6 +130,8 @@ func keyOf(f interface{}) sortKey {
 		return sortKey{point: v.Point, subject: v.Actor, secondary: v.Action, scope: v.Requires.Scope, target: v.Requires.Target}
 	case ConfusedDeputyFinding:
 		return sortKey{point: v.Point, subject: v.Actor, secondary: v.Action, scope: v.Requires.Scope, target: v.Requires.Target, requester: v.Requester}
+	case DelegationDepthFinding:
+		return sortKey{point: v.Point, subject: v.Delegator, secondary: v.Delegatee}
 	default:
 		panic(fmt.Sprintf("report: unknown finding type %T", f))
 	}

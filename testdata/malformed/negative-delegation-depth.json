@@ -1,0 +1,11 @@
+{
+  "version": "4",
+  "principals": [
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": -1 }
+    ] }
+  ],
+  "agents": [],
+  "delegations": [],
+  "operations": []
+}

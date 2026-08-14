@@ -1,0 +1,38 @@
+{
+  "version": "4",
+  "principals": [
+    { "id": "root", "authority": [
+      { "scope": "a", "target": "svc-a", "max_delegation_depth": 5 },
+      { "scope": "a", "target": "svc-b", "max_delegation_depth": 5 },
+      { "scope": "z", "target": "svc-a", "max_delegation_depth": 5 }
+    ] },
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1 }
+    ] }
+  ],
+  "agents": [
+    { "id": "mid" },
+    { "id": "requester-good" },
+    { "id": "requester-bad-scope" },
+    { "id": "requester-bad-target" },
+    { "id": "billing-agent" },
+    { "id": "support-agent" }
+  ],
+  "delegations": [
+    { "delegator": "root", "delegatee": "mid", "authority": [ { "scope": "a", "target": "svc-a" } ] },
+    { "delegator": "root", "delegatee": "requester-good", "authority": [ { "scope": "a", "target": "svc-a" } ] },
+    { "delegator": "root", "delegatee": "requester-bad-scope", "authority": [ { "scope": "z", "target": "svc-a" } ] },
+    { "delegator": "root", "delegatee": "requester-bad-target", "authority": [ { "scope": "a", "target": "svc-b" } ] },
+    { "delegator": "admin", "delegatee": "billing-agent", "authority": [ { "scope": "billing:refund", "target": "billing-service" } ] },
+    { "delegator": "billing-agent", "delegatee": "support-agent", "authority": [ { "scope": "billing:refund", "target": "billing-service" } ] }
+  ],
+  "operations": [
+    { "actor": "mid", "requester": "requester-good", "action": "op-amp", "requires": "never-held-scope", "target": "svc-a" },
+    { "actor": "mid", "requester": "requester-bad-scope", "action": "op-cd-scope", "requires": "a", "target": "svc-a" },
+    { "actor": "mid", "requester": "requester-bad-target", "action": "op-cd-target", "requires": "a", "target": "svc-a" },
+    { "actor": "mid", "requester": "requester-good", "action": "op-ctx", "requires": "a", "target": "svc-b" },
+    { "actor": "mid", "requester": "requester-good", "action": "op-pass", "requires": "a", "target": "svc-a" },
+    { "actor": "billing-agent", "requester": "admin", "action": "refund-ok", "requires": "billing:refund", "target": "billing-service" },
+    { "actor": "support-agent", "requester": "admin", "action": "refund-deep", "requires": "billing:refund", "target": "billing-service" }
+  ]
+}
