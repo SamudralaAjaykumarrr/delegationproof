@@ -1,0 +1,16 @@
+{
+  "version": "5",
+  "principals": [
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": true }
+    ] }
+  ],
+  "agents": [ { "id": "billing-agent" } ],
+  "delegations": [
+    { "delegator": "admin", "delegatee": "billing-agent", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "requires_approval": true }
+    ] }
+  ],
+  "approvals": [],
+  "operations": []
+}

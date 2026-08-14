@@ -1,8 +1,9 @@
-// Version-4 loading: structural validation for version-4 documents
-// (docs/phase-4-plan.md §5, §6, §17). This file is purely additive: the
-// version-1/2/3 decode+validate paths (loader.go, loader_v2.go, loader_v3.go)
-// are not modified by anything in this file except the three sanctioned
-// invalid_version message-text touches already made in those files.
+// Version-5 loading: structural validation for version-5 documents
+// (docs/phase-5-plan.md §5, §6, §7, §16). This file is purely additive: the
+// version-1/2/3/4 decode+validate paths (loader.go, loader_v2.go,
+// loader_v3.go, loader_v4.go) are not modified by anything in this file
+// except the four sanctioned invalid_version message-text touches already
+// made in those files.
 package loader
 
 import (
@@ -17,16 +18,31 @@ import (
 	"github.com/SamudralaAjaykumarrr/delegationproof/internal/model"
 )
 
-// KindInvalidDelegationDepth is the one new version-4 structural error kind
-// (docs/phase-4-plan.md §17): a RootCapability's max_delegation_depth is
-// either absent (decodes as a nil *int) or present but negative. Both share
-// one kind, mirroring how unknown_requester already covers both "missing"
-// and "malformed" for a single underlying reason
-// (docs/phase-3-plan.md §15).
-const KindInvalidDelegationDepth ErrorKind = "invalid_delegation_depth"
+// New version-5-only structural error kinds (docs/phase-5-plan.md §16).
+const (
+	// KindMissingApprovalRequirement covers exactly one condition: a
+	// RootCapabilityV5's RequiresApproval is nil (the key was omitted).
+	// There is no "negative"/out-of-range sub-case for a boolean field,
+	// unlike max_delegation_depth, mirroring the "one kind, one clear
+	// condition" discipline unknown_requester/unknown_approver already
+	// establish for their own single conditions.
+	KindMissingApprovalRequirement ErrorKind = "missing_approval_requirement"
 
-func decodeAndValidateV4(data []byte) (*model.ModelV4, *LoadError) {
-	var m model.ModelV4
+	// KindUnknownApprover mirrors unknown_requester/unknown_actor
+	// precisely: approvals[].approver does not resolve to a known
+	// principal or agent id. A missing approver (decodes as "") or a
+	// syntactically-malformed one both fall into this same kind.
+	KindUnknownApprover ErrorKind = "unknown_approver"
+
+	// KindDuplicateApproval fires when two entries within approvals[]
+	// share the exact same (approver, scope, target) triple. Two entries
+	// sharing only scope/target but naming different approvers are not a
+	// duplicate — a real, legitimate case (§7).
+	KindDuplicateApproval ErrorKind = "duplicate_approval"
+)
+
+func decodeAndValidateV5(data []byte) (*model.ModelV5, *LoadError) {
+	var m model.ModelV5
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&m); err != nil {
@@ -36,7 +52,7 @@ func decodeAndValidateV4(data []byte) (*model.ModelV4, *LoadError) {
 		return nil, &LoadError{ParseError: "invalid JSON: unexpected trailing content after top-level document"}
 	}
 
-	errs := validateV4(&m)
+	errs := validateV5(&m)
 	if len(errs) > 0 {
 		sortErrors(errs)
 		return nil, &LoadError{Errors: errs}
@@ -44,15 +60,16 @@ func decodeAndValidateV4(data []byte) (*model.ModelV4, *LoadError) {
 	return &m, nil
 }
 
-// validateV4 is byte-for-byte the same structural checks validateV3
+// validateV5 is byte-for-byte the same structural checks validateV4
 // performs (agents/delegations/operations are identical in shape to their
-// v3 counterparts), except principals' capability sets are validated via
-// checkRootCapabilitySet instead of checkCapabilitySet, to additionally
-// check each entry's MaxDelegationDepth (§6, §17).
-func validateV4(m *model.ModelV4) []ValidationError {
+// v4 counterparts), except principals' capability sets are validated via
+// checkRootCapabilitySetV5 instead of checkRootCapabilitySet (to
+// additionally check each entry's RequiresApproval pointer, §6, §16), plus
+// one new check over the new top-level approvals array (§7, §16).
+func validateV5(m *model.ModelV5) []ValidationError {
 	var errs []ValidationError
 
-	if m.Version != "4" {
+	if m.Version != "5" {
 		errs = append(errs, ValidationError{
 			Kind:    KindInvalidVersion,
 			Primary: m.Version,
@@ -73,6 +90,10 @@ func validateV4(m *model.ModelV4) []ValidationError {
 		errs = append(errs, resourceLimitErr("max_operations", "",
 			fmt.Sprintf("operation count %d exceeds max_operations (%d)", len(m.Operations), limits.MaxOperations)))
 	}
+	if len(m.Approvals) > limits.MaxApprovals {
+		errs = append(errs, resourceLimitErr("max_approvals", "",
+			fmt.Sprintf("approval count %d exceeds max_approvals (%d)", len(m.Approvals), limits.MaxApprovals)))
+	}
 
 	nodes := map[string]*nodeInfo{}
 	registerNode := func(id, kind string) {
@@ -91,7 +112,7 @@ func validateV4(m *model.ModelV4) []ValidationError {
 	for _, p := range m.Principals {
 		checkID(&errs, "principal", p.ID)
 		registerNode(p.ID, "principal")
-		checkRootCapabilitySet(&errs, "principal", p.ID, p.Authority)
+		checkRootCapabilitySetV5(&errs, "principal", p.ID, p.Authority)
 	}
 	for _, a := range m.Agents {
 		checkID(&errs, "agent", a.ID)
@@ -153,6 +174,8 @@ func validateV4(m *model.ModelV4) []ValidationError {
 		}
 	}
 
+	checkApprovals(&errs, nodes, m.Approvals)
+
 	for _, op := range m.Operations {
 		if _, ok := nodes[op.Actor]; !ok {
 			errs = append(errs, ValidationError{
@@ -197,16 +220,15 @@ func validateV4(m *model.ModelV4) []ValidationError {
 	return errs
 }
 
-// checkRootCapabilitySet validates one principal's root capability array
-// (docs/phase-4-plan.md §6, §17): the size bound and (scope, target)
-// grammar/duplicate checks exactly as checkCapabilitySet already performs
-// (duplicate detection is projected onto (scope, target) only — two entries
-// sharing that pair are a duplicate_capability regardless of whether their
-// max_delegation_depth values agree, §17), plus each entry's
-// MaxDelegationDepth: nil (missing) or negative is invalid_delegation_depth;
-// a present, non-negative value exceeding limits.MaxDelegationDepth is a
-// resource_limit_exceeded error, reusing the existing generic mechanism.
-func checkRootCapabilitySet(errs *[]ValidationError, contextKind, ownerID string, caps []model.RootCapability) {
+// checkRootCapabilitySetV5 validates one principal's root capability array
+// (docs/phase-5-plan.md §6, §16): the size bound and (scope, target)
+// grammar/duplicate checks exactly as checkRootCapabilitySet already
+// performs (duplicate detection is projected onto (scope, target) only —
+// two entries sharing that pair are a duplicate_capability regardless of
+// whether their max_delegation_depth or requires_approval values agree,
+// §6), plus each entry's MaxDelegationDepth (unchanged from v4) and
+// RequiresApproval: nil (missing) is missing_approval_requirement.
+func checkRootCapabilitySetV5(errs *[]ValidationError, contextKind, ownerID string, caps []model.RootCapabilityV5) {
 	if len(caps) > limits.MaxAuthoritySetSize {
 		*errs = append(*errs, resourceLimitErr("max_authority_set_size", ownerID,
 			fmt.Sprintf("%s %q authority set (%d capabilities) exceeds max_authority_set_size (%d)", contextKind, ownerID, len(caps), limits.MaxAuthoritySetSize)))
@@ -240,5 +262,41 @@ func checkRootCapabilitySet(errs *[]ValidationError, contextKind, ownerID string
 			*errs = append(*errs, resourceLimitErr("max_delegation_depth", ownerID,
 				fmt.Sprintf("%s %q capability %s@%s max_delegation_depth %d exceeds max_delegation_depth (%d)", contextKind, ownerID, c.Scope, c.Target, *c.MaxDelegationDepth, limits.MaxDelegationDepth)))
 		}
+
+		if c.RequiresApproval == nil {
+			*errs = append(*errs, ValidationError{
+				Kind: KindMissingApprovalRequirement, Primary: ownerID, Secondary: c.Scope + "@" + c.Target,
+				Message: fmt.Sprintf("%s %q capability %s@%s is missing required field requires_approval", contextKind, ownerID, c.Scope, c.Target),
+			})
+		}
+	}
+}
+
+// checkApprovals validates the top-level approvals array (docs/phase-5-plan.md
+// §7, §16): each entry's approver must resolve to a known node id, scope/target
+// must match the unchanged Phase 2 capability grammar, and no two entries may
+// share the exact same (approver, scope, target) triple. An approval naming a
+// (scope, target) no principal ever declared is not a structural error (§7) —
+// it is simply inert, checked at verify time only.
+func checkApprovals(errs *[]ValidationError, nodes map[string]*nodeInfo, approvals []model.ApprovalV5) {
+	seen := map[[3]string]bool{}
+	for _, a := range approvals {
+		if _, ok := nodes[a.Approver]; !ok {
+			*errs = append(*errs, ValidationError{
+				Kind: KindUnknownApprover, Primary: a.Approver, Secondary: a.Scope + "@" + a.Target,
+				Message: fmt.Sprintf("approval approver %q is not a known node id", a.Approver),
+			})
+		}
+		checkScope(errs, "approval", a.Approver, a.Scope)
+		checkTarget(errs, "approval", a.Approver, a.Target)
+
+		key := [3]string{a.Approver, a.Scope, a.Target}
+		if seen[key] {
+			*errs = append(*errs, ValidationError{
+				Kind: KindDuplicateApproval, Primary: a.Approver, Secondary: a.Scope + "@" + a.Target,
+				Message: fmt.Sprintf("duplicate approval record (%q, %s, %s)", a.Approver, a.Scope, a.Target),
+			})
+		}
+		seen[key] = true
 	}
 }

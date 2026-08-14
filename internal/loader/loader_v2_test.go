@@ -71,7 +71,7 @@ func TestVersionDispatch(t *testing.T) {
 		if ve.Kind != KindInvalidVersion {
 			t.Errorf("Kind = %q, want %q", ve.Kind, KindInvalidVersion)
 		}
-		want := `version must be "1", "2", "3", or "4", got "9"`
+		want := `version must be "1", "2", "3", "4", or "5", got "9"`
 		if ve.Message != want {
 			t.Errorf("Message = %q, want %q", ve.Message, want)
 		}

@@ -55,7 +55,7 @@ func validateV3(m *model.ModelV3) []ValidationError {
 		errs = append(errs, ValidationError{
 			Kind:    KindInvalidVersion,
 			Primary: m.Version,
-			Message: fmt.Sprintf(`version must be "1", "2", "3", or "4", got %q`, m.Version),
+			Message: fmt.Sprintf(`version must be "1", "2", "3", "4", or "5", got %q`, m.Version),
 		})
 	}
 

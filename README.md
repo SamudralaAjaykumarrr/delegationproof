@@ -1,7 +1,7 @@
 # DelegationProof
 
 DelegationProof is a small, dependency-free, offline, deterministic CLI
-that checks a declared agent-delegation topology against four composable
+that checks a declared agent-delegation topology against five composable
 security invariants:
 
 - **Authority Non-Amplification** (Phase 1): does any node in the graph
@@ -16,13 +16,17 @@ security invariants:
 - **Delegation Depth Preservation** (Phase 4): has a capability already
   been re-delegated more hops from its origin than that origin's own
   declared budget permits?
+- **Approval Preservation** (Phase 5): if a capability's origin declares
+  that exercising it also requires a second party's explicit sign-off,
+  does at least one declared, standing-backed approval exist for it?
 
 Each invariant is a separate, additive input schema version (`"1"`
-through `"4"`) rather than a single ever-growing format — see
+through `"5"`) rather than a single ever-growing format — see
 [`docs/phase-1-plan.md`](docs/phase-1-plan.md),
 [`docs/phase-2-plan.md`](docs/phase-2-plan.md),
-[`docs/phase-3-plan.md`](docs/phase-3-plan.md), and
-[`docs/phase-4-plan.md`](docs/phase-4-plan.md) for the full design
+[`docs/phase-3-plan.md`](docs/phase-3-plan.md),
+[`docs/phase-4-plan.md`](docs/phase-4-plan.md), and
+[`docs/phase-5-plan.md`](docs/phase-5-plan.md) for the full design
 contract each phase follows, including what is deliberately **out of
 scope** and how later phases attach to earlier ones without rewriting
 them.
@@ -43,7 +47,10 @@ re-delegation budget — is **fully distrusted**: it contributes nothing to
 the delegatee's derived authority, not even the overlapping part. This
 strict "no partial credit" semantics is what keeps every invariant precise
 and cheap to compute (no backtracking, no search: `O(nodes + edges +
-operations)`).
+operations)`). Version 5 extends the same discipline to a fourth entity
+kind — a declared approval record: one whose named approver lacks
+independent standing over the capability it claims to approve contributes
+nothing toward satisfying an approval requirement.
 
 ## Build
 
@@ -70,11 +77,11 @@ delegationproof verify   <model.json> [--format text|json]
   (the machine-readable finding contract, one JSON object to stdout, no
   trailing prose).
 
-The input document's `"version"` field (`"1"`, `"2"`, `"3"`, or `"4"`)
-selects which schema and which set of invariants apply — there is no
-separate CLI flag for this. Later versions are strict, additive
+The input document's `"version"` field (`"1"`, `"2"`, `"3"`, `"4"`, or
+`"5"`) selects which schema and which set of invariants apply — there is
+no separate CLI flag for this. Later versions are strict, additive
 extensions of earlier ones; a version-1 document is checked only against
-Authority Non-Amplification, a version-4 document against all four
+Authority Non-Amplification, a version-5 document against all five
 invariants.
 
 Errors always go to stderr; result output always goes to stdout — safe to
@@ -162,6 +169,37 @@ capability (`refund-ok`, at exactly its budget boundary — remaining depth
 0) still passes: usability and delegability are independently-gated
 properties of the same held capability.
 
+[`examples/billing-approval.json`](examples/billing-approval.json)
+(version 5) declares `admin` holding both `billing:refund` and
+`billing:void` for `billing-service`, each requiring approval, delegated
+one hop to `billing-agent`. A declared approval record names
+`compliance-officer` — who independently, axiomatically holds
+`billing:refund@billing-service` — as an approver for that capability
+only:
+
+```sh
+$ delegationproof verify examples/billing-approval.json
+DENY
+1 finding(s)
+
+[1] approval_missing (operation)
+  actor:               billing-agent
+  requester:           admin
+  action:              void-unapproved
+  requires:            billing:void@billing-service
+  declared approvers:  (none)
+  trace:               admin -> billing-agent -> void-unapproved
+  reason:              void-unapproved requires billing:void@billing-service, which billing-agent validly holds and admin is authorized to request, but billing:void@billing-service requires approval and no approval has been declared for it
+```
+
+`refund-approved` (requiring `billing:refund@billing-service`) passes
+silently — `billing-agent` validly holds it, `admin` is authorized to
+request it, and a standing-backed approval exists. `void-unapproved`
+(requiring `billing:void@billing-service`) fails: that capability also
+requires approval, but no approval record was ever declared for it —
+`approval_missing`, not amplification, binding, depth, or confused-deputy,
+since all four of those invariants pass for this operation.
+
 ## Input model
 
 See [`schemas/model.md`](schemas/model.md) for the full field-by-field
@@ -202,6 +240,31 @@ and the version-4 shape, showing every field added by every phase:
 }
 ```
 
+and the version-5 shape, adding approval preservation on top of version 4:
+
+```json
+{
+  "version": "5",
+  "principals": [
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": true }
+    ] }
+  ],
+  "agents": [{ "id": "billing-agent" }],
+  "delegations": [
+    { "delegator": "admin", "delegatee": "billing-agent", "authority": [
+      { "scope": "billing:refund", "target": "billing-service" }
+    ] }
+  ],
+  "approvals": [
+    { "approver": "compliance-officer", "scope": "billing:refund", "target": "billing-service" }
+  ],
+  "operations": [
+    { "actor": "billing-agent", "requester": "admin", "action": "refund", "requires": "billing:refund", "target": "billing-service" }
+  ]
+}
+```
+
 Authority is an opaque, exact-match scope string — no wildcards, no
 hierarchy. From version 2 onward, authority is a `(scope, target)`
 capability tuple rather than a bare scope. From version 3 onward, an
@@ -209,11 +272,17 @@ operation names a `requester` in addition to its `actor`. From version 4
 onward, a *principal's own declared* capability additionally carries
 `max_delegation_depth` — the field exists nowhere else (never on a
 delegation edge, never on an operation); remaining budget is derived by
-the verifier, never re-declared downstream. Unknown fields anywhere are
-rejected. An agent may never declare its own `authority`; it is always
-derived. The delegation graph must be a DAG; principals cannot be
-delegation targets. All structural problems in one input are collected
-and reported together, not fail-fast.
+the verifier, never re-declared downstream. From version 5 onward, a
+*principal's own declared* capability additionally carries a required
+`requires_approval` boolean, and the document gains a new top-level
+`approvals` array — each record naming an approver and the exact
+`(scope, target)` it approves. An approval record is checked, never
+traversed: it is not a graph node or edge, and gates a capability's
+*exercise*, never its delegation. Unknown fields anywhere are rejected. An
+agent may never declare its own `authority`; it is always derived. The
+delegation graph must be a DAG; principals cannot be delegation targets.
+All structural problems in one input are collected and reported together,
+not fail-fast.
 
 ## Resource bounds
 
@@ -233,6 +302,7 @@ unbounded allocation, never a hang:
 | Max authority-set size (per principal or per edge) | 256 |
 | Max delegation chain depth (longest simple path, resource-safety valve) | 64 |
 | Max declared `max_delegation_depth` value (policy-value safety valve) | 64 |
+| Max approvals (top-level `approvals` array size) | 10,000 |
 
 `max_chain_depth` bounds the actual shape of the graph and
 `max_delegation_depth` bounds only how large a *declared policy value* a
@@ -259,6 +329,13 @@ output. This holds because:
   componentwise maximum over all valid incoming edges per capability, with
   ties broken by the same ascending-lexicographic-delegator-id iteration
   order already used everywhere else — never a second sort.
+- Version 5's multi-path `requires_approval` computation takes the
+  logical OR over all valid incoming edges per capability — commutative,
+  associative, and idempotent, so it needs no tie-break at all, computed
+  independently of which path wins version 4's remaining-budget contest.
+  A capability's set of standing-backed approvers is likewise the full,
+  sorted, deduplicated set of matching `approvals[]` entries, not one
+  arbitrarily chosen representative.
 
 See `internal/report`, `internal/graph`, and `internal/verify` for where
 each of these rules is implemented, and each `cmd/delegationproof/main*_test.go`
@@ -270,7 +347,7 @@ this down.
 
 ```
 cmd/delegationproof/   CLI entry point: arg parsing, version dispatch, exit-code mapping, stdout/stderr split
-internal/model/        Pure data types per schema version (types.go, types_v2.go, types_v3.go, types_v4.go)
+internal/model/        Pure data types per schema version (types.go, types_v2.go, types_v3.go, types_v4.go, types_v5.go)
 internal/limits/       Resource-bound constants (exported, so tests can lower them)
 internal/loader/       JSON decode + full structural validation, one file per schema version
 internal/graph/        DAG topological sort, cycle detection, canonical BFS trace (shared by every version)
@@ -280,7 +357,7 @@ internal/exitcode/     The 4-value exit-code type
 examples/               One worked example per phase
 schemas/                model.md — human-readable input contract, one section per schema version
 testdata/               valid*/, malformed/ (one fixture per structural error kind), golden/
-docs/                   phase-1-plan.md ... phase-4-plan.md — the authoritative design contracts
+docs/                   phase-1-plan.md ... phase-5-plan.md — the authoritative design contracts
 ```
 
 Each schema version's model types, loader, and verifier are structurally
@@ -303,7 +380,13 @@ version-4 `max_delegation_depth` is a policy assertion by the document's
 author, not a verified fact about a real system's actual re-delegation
 history — DelegationProof proves that a document's declared model never
 claims a capability travels farther than its own declared budget permits,
-not that a real system enforces that budget at runtime. Parsing is pure
+not that a real system enforces that budget at runtime. A version-5
+`approvals[]` entry is likewise a declared fact by the document's author,
+not a verified real-world sign-off event — DelegationProof verifies that a
+named approver structurally *could* legitimately approve (by
+independently holding the capability), not that the named party is who
+they claim to be, or that a real compliance workflow actually produced
+that sign-off. Parsing is pure
 stdlib data deserialization: no code execution, no dynamic loading, no
 network access, no filesystem access beyond the one input file. Combined
 with the resource bounds above, it is safe to run against untrusted model
@@ -320,8 +403,9 @@ Test categories include: clean-pass golden output, every structural error
 kind in each phase's design contract (one fixture each under
 `testdata/malformed/`), the strict-distrust ("no partial credit")
 semantics of Derived Authority (extended in version 4 to a third failure
-surface — remaining re-delegation budget — without weakening the original
-two), deterministic finding ordering, byte-identical output across
+surface — remaining re-delegation budget, and in version 5 to a fourth —
+non-standing approval records — without weakening the earlier ones),
+deterministic finding ordering, byte-identical output across
 semantically-equivalent reordered input, every resource bound (exercised
 via lowered `internal/limits` values in white-box tests), CLI exit codes
 and the stdout/stderr split, and no-panic fuzzing over truncated/mutated
@@ -332,9 +416,12 @@ input — for every schema version, independently.
 Networking, hosted services, OAuth/identity-provider implementation, MCP/A2A
 protocol implementation, LLM integration, runtime enforcement/proxying,
 SAT/SMT solving, SARIF output, CI vendor integration, databases, a web UI,
-automatic policy generation, scope wildcards/hierarchy, approvals,
-revocation, temporal/session state, explicit per-edge delegation-budget
-attenuation, and real-world redelegation-count correspondence are all
-explicitly out of scope through Phase 4. See each `docs/phase-*-plan.md`
-for the full non-goals list at that phase and how later phases may attach
-to this foundation without rewriting it.
+automatic policy generation, scope wildcards/hierarchy, revocation,
+temporal/session state (including a pending/approved/rejected approval
+state machine), explicit per-edge delegation-budget attenuation,
+multi-approver quorum/threshold requirements, approval-gated delegation,
+self-approval/separation-of-duties enforcement, and real-world
+redelegation-count or approval-workflow correspondence are all explicitly
+out of scope through Phase 5. See each `docs/phase-*-plan.md` for the full
+non-goals list at that phase and how later phases may attach to this
+foundation without rewriting it.

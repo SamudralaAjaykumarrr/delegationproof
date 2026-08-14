@@ -1,0 +1,11 @@
+DENY
+1 finding(s)
+
+[1] approval_missing (operation)
+  actor:               billing-agent
+  requester:           admin
+  action:              void-unapproved
+  requires:            billing:void@billing-service
+  declared approvers:  (none)
+  trace:               admin -> billing-agent -> void-unapproved
+  reason:              void-unapproved requires billing:void@billing-service, which billing-agent validly holds and admin is authorized to request, but billing:void@billing-service requires approval and no approval has been declared for it

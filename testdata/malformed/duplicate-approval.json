@@ -1,0 +1,18 @@
+{
+  "version": "5",
+  "principals": [
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": true }
+    ] },
+    { "id": "compliance-officer", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 0, "requires_approval": true }
+    ] }
+  ],
+  "agents": [],
+  "delegations": [],
+  "approvals": [
+    { "approver": "compliance-officer", "scope": "billing:refund", "target": "billing-service" },
+    { "approver": "compliance-officer", "scope": "billing:refund", "target": "billing-service" }
+  ],
+  "operations": []
+}

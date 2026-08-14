@@ -579,3 +579,214 @@ anything Phase 4 adds.
 
 See `docs/phase-4-plan.md` §3, §4, §8, §9, §10, §11, §12, §13, §16 for the
 full formal statement, multi-path semantics, and verification algorithm.
+
+---
+
+# Version 5 — approval preservation model
+
+This section documents the input contract for `"version": "5"` documents
+(`docs/phase-5-plan.md` §3–§17). `internal/loader`'s `validateV5` is the
+sole runtime source of truth; this is documentation only. Version-1,
+version-2, version-3, and version-4 documents are entirely unaffected by
+anything in this section — see the version dispatch rule below.
+
+## What's new
+
+Phase 5 adds exactly two new atomic concepts: **`requires_approval`**, a
+required boolean attached to a capability *only at the point it is declared
+by a principal* (mirroring `max_delegation_depth`'s placement exactly), and
+**`approvals`**, a new top-level array of declared approval records, each
+naming an approver and the exact capability `(scope, target)` it approves.
+An approval record is checked, never traversed: it is not a graph node, not
+an edge, and does not participate in `graph.TopoSort` or
+`graph.CanonicalTrace`.
+
+Agents, delegations, and operations are byte-for-byte identical in shape to
+their version-4 counterparts. Delegation edges continue to use the plain,
+unmodified `{"scope": "...", "target": "..."}` capability tuple —
+`requires_approval` is never re-declared or re-asserted at a delegation
+edge, and approval gates *exercise*, not transmission (an approval-required
+capability may still be freely delegated, subject to the unchanged
+presence/binding/depth rules).
+
+## Top-level document
+
+```json
+{
+  "version": "5",
+  "principals": [
+    { "id": "...", "authority": [
+      { "scope": "...", "target": "...", "max_delegation_depth": 1, "requires_approval": true }
+    ] }
+  ],
+  "agents": [ { "id": "..." } ],
+  "delegations": [ { "delegator": "...", "delegatee": "...", "authority": [ { "scope": "...", "target": "..." } ] } ],
+  "approvals": [
+    { "approver": "...", "scope": "...", "target": "..." }
+  ],
+  "operations": [
+    { "actor": "...", "requester": "...", "action": "...", "requires": "...", "target": "..." }
+  ]
+}
+```
+
+Unknown fields anywhere in the document (top-level or nested) are
+rejected, exactly as in versions 1-4. In particular, a stray
+`requires_approval` key on a delegation's authority entry or on an
+operation is rejected at decode time (no such field exists on either
+type).
+
+## Version dispatch
+
+`"5"` routes to the version-5 path described here. `"1"`, `"2"`, `"3"`,
+and `"4"` are unaffected. Any other value (including absent, which decodes
+as `""`) is a single `invalid_version` error:
+`` version must be "1", "2", "3", "4", or "5", got %q ``. The five schemas
+share no internal model type.
+
+## Field rules
+
+| Field | Rule |
+|---|---|
+| `version` | Required. Must equal `"1"`, `"2"`, `"3"`, `"4"`, or `"5"`. |
+| `principals[].id` | Same rules as version 4. |
+| `principals[].authority` | Array of *root* capability objects `{"scope": "...", "target": "...", "max_delegation_depth": N, "requires_approval": B}`. May be empty. No duplicate `(scope, target)` tuples — regardless of whether their `max_delegation_depth` or `requires_approval` values agree. |
+| `principals[].authority[].max_delegation_depth` | Same rule as version 4. |
+| `principals[].authority[].requires_approval` | Required on every entry. A boolean, no default. `false` is itself a legitimate, meaningful, commonly-declared value — a document author who forgets the field entirely is rejected, never silently interpreted as "no approval required." |
+| `agents[].id` | Same rules as version 4. |
+| `agents[]` | Must **not** contain an `authority` key, same as versions 1-4. |
+| `delegations[].delegator` / `.delegatee` / `.authority` | Same rules as version 4 — the plain `{"scope", "target"}` tuple, no `requires_approval` field exists here at all. |
+| `operations[].actor` / `.requester` / `.action` / `.requires` / `.target` | Same rules as version 4. |
+| `approvals[].approver` | Required. Must reference a known principal or agent id — the same id namespace `actor`/`requester` draw from. |
+| `approvals[].scope` / `.target` | Required. Use the unchanged Phase 2 capability grammar. An approval naming a `(scope, target)` no principal ever declared is not a structural error — it is simply inert. |
+
+## `requires_approval` semantics
+
+- **Not part of a capability's identity.** `(scope, target)` remains the
+  sole identity of a capability, exactly as version 2 established.
+  `requires_approval` is metadata attached to a capability's *origin
+  declaration*, checked as an additional, independent dimension once
+  presence/binding/requester-standing are already established.
+- **Gates exercise, not delegation.** A delegation edge carrying an
+  approval-required capability is evaluated by the unchanged Phase 1/2/4
+  edge-level rules exactly as if `requires_approval` did not exist — there
+  is no new edge-level structural rule and no new edge-level finding kind
+  in Phase 5 at all.
+- **Multiple valid delivering paths: logical OR, independent of the
+  `remaining`-maximization contest.** If a capability reaches a node via
+  more than one independently valid delegation path, and the paths
+  disagree on `requires_approval`, the node's adopted value is `true` if
+  **any** valid delivering path declares `true` — computed independently
+  of which path wins the `remaining`/`configuredMax` contest (§10.1's
+  fail-closed rule; deliberately the opposite polarity from
+  `remaining`'s "adopt the more permissive of two true facts," because
+  here the fail-closed choice is the *stricter* one).
+
+## Approval record semantics
+
+- **Capability-scoped, not operation-scoped and not actor/requester-scoped.**
+  An approval names exactly the `(scope, target)` pair it covers, and
+  covers *every* operation that exercises that capability.
+- **Multiple approval records may name the same `(scope, target)` with
+  different approvers** — legal and expected. The only rejected
+  duplication is an exact repeated `(approver, scope, target)` triple.
+- **Whether the named approver actually holds standing is a semantic
+  question**, checked at `verify` time, never a `validate`-time structural
+  requirement.
+- **Self-approval is not structurally prohibited.** An approval record may
+  legally name the same node as the operation's `actor` or `requester`.
+
+## New structural error kinds
+
+| Kind | When |
+|---|---|
+| `missing_approval_requirement` | A `RootCapabilityV5`'s `requires_approval` is `nil` (the key was omitted). |
+| `unknown_approver` | `approvals[].approver` does not resolve to a known principal or agent id — mirrors `unknown_requester`/`unknown_actor` precisely. A missing `approver` (decodes as `""`) or a syntactically-malformed one both fall into this same kind. |
+| `duplicate_approval` | Two entries within `approvals[]` share the exact same `(approver, scope, target)` triple. Two entries sharing only `scope`/`target` but naming *different* approvers are not a duplicate. |
+
+All version-1/2/3/4 structural error kinds apply unchanged.
+`duplicate_capability` is reused, unmodified, projected onto
+`(scope, target)` only (neither `max_delegation_depth` nor
+`requires_approval` is part of the uniqueness key).
+
+Explicitly **not** a structural error:
+
+- A non-boolean JSON value (`"true"`, `1`) for `requires_approval` — this
+  is a JSON decode-level type mismatch against the `*bool` field, surfaced
+  as the existing `invalid JSON: ...` `ParseError` path.
+- An approval record referencing a `(scope, target)` no principal ever
+  declared, or naming an approver who lacks standing over the capability
+  it claims to approve — both are `verify`-time (exit 1) findings, never
+  `validate`-time (exit 2) errors.
+- Self-approval.
+
+## Resource bounds
+
+All version-1/2/3/4 bounds (`internal/limits`) apply unchanged. One new
+bound:
+
+| Limit | Value | Notes |
+|---|---|---|
+| `MaxApprovals` | 10000 | Bounds the number of entries in the top-level `approvals` array — a new, independent top-level array, not nested inside any existing bounded collection. |
+
+## The invariant: Approval Preservation
+
+A version-5 document is checked against Non-Amplification, Context-Binding
+Preservation, Requester Authorization Preservation, and Delegation Depth
+Preservation exactly as version 4 is, plus one new invariant, evaluated at
+the operation level, strictly last, only once presence, binding, and
+requester standing are already established:
+
+> For every capability `c = (s, t)` declared by any root principal with
+> `c.requires_approval = true`, and for every operation
+> `op = (actor, requester, action, s, t)`, if `c ∈ DA(actor)` and
+> `c ∈ DA(requester)`, then `op` is legitimate only if there exists at
+> least one declared approval record `a = (approver, s, t)` such that
+> `c ∈ DA(approver)`. If no such record exists at all, `op` is an
+> `approval_missing` violation. If at least one such record exists, naming
+> one or more approvers, but for **every** one of them `c ∉ DA(approver)`,
+> `op` is an `approval_unauthorized` violation.
+
+**Four-step operation-level precedence, extended from version 3's
+three-step chain:**
+
+```
+if C not in DA(actor):
+    classify per version 2's rule -> authority_amplification | context_binding_violation
+    (requester and approval are NOT evaluated)
+elif C not in DA(requester):
+    confused_deputy
+    (approval is NOT evaluated)
+elif not actorState[C].requires_approval:
+    ALLOW, no finding — vacuously satisfied
+elif no approval record declared for C:
+    approval_missing
+elif no declared approver independently holds C:
+    approval_unauthorized
+else:
+    ALLOW, no finding
+```
+
+`approval_missing`/`approval_unauthorized` are **always** operation-level
+findings (`point: "operation"`), never edge-level — approval gates
+exercise, not transmission, and there is no approval-related edge-level
+finding of any kind.
+
+The `ApprovalFinding` carries `declared_approvers` — `[]` for
+`approval_missing`, the full sorted, deduplicated set of declared
+approvers for `approval_unauthorized` (existential quantification: one
+valid, standing-backed approval record is sufficient; there is no
+"canonical" approver to select) — `trace` (the same `CanonicalTrace`
+convention every prior operation-level finding already uses), and a
+deterministic `reason` string.
+
+Strict distrust extends to a fourth entity kind: an approval record whose
+named approver lacks independent standing for the exact capability it
+claims to approve contributes **nothing** toward satisfying the approval
+requirement — not partial credit. An edge that fails presence, binding, or
+depth contributes nothing to the delegatee's derived state at all, so
+there is no `requires_approval` fact to leak from an already-invalid edge
+either.
+
+See `docs/phase-5-plan.md` §3, §4, §8, §9, §10, §11, §12, §13, §17 for the
+full formal statement, multi-path semantics, and verification algorithm.
