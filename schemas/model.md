@@ -379,3 +379,203 @@ exactly as it already contributes nothing to `DA(actor)`.
 
 See `docs/phase-3-plan.md` §7, §8, §11, §12 for the full formal statement,
 precedence algorithm, and classification rule.
+
+---
+
+# Version 4 — delegation-depth (re-delegation budget) model
+
+This section documents the input contract for `"version": "4"` documents
+(`docs/phase-4-plan.md` §3–§17). `internal/loader`'s `validateV4` is the
+sole runtime source of truth; this is documentation only. Version-1,
+version-2, and version-3 documents are entirely unaffected by anything in
+this section — see the version dispatch rule below.
+
+## What's new
+
+Phase 4 adds exactly one new atomic concept: **`max_delegation_depth`**, an
+integer re-delegation budget attached to a capability *only at the point it
+is declared by a principal* — never on a delegation edge, never on an
+operation. It answers a fourth, independent question none of the first
+three invariants can express: not "is this authority real," but "has it
+already traveled farther from its origin than that origin ever permitted."
+
+Agents, delegations, and operations are byte-for-byte identical in shape to
+their version-3 counterparts. Delegation edges continue to use the plain,
+unmodified `{"scope": "...", "target": "..."}` capability tuple — a
+delegatee's remaining budget is always *derived* by the verifier from the
+root declaration and the number of hops actually traversed, never
+re-declared or attenuated by the document itself.
+
+## Top-level document
+
+```json
+{
+  "version": "4",
+  "principals": [
+    { "id": "...", "authority": [
+      { "scope": "...", "target": "...", "max_delegation_depth": 1 }
+    ] }
+  ],
+  "agents": [ { "id": "..." } ],
+  "delegations": [ { "delegator": "...", "delegatee": "...", "authority": [ { "scope": "...", "target": "..." } ] } ],
+  "operations": [
+    { "actor": "...", "requester": "...", "action": "...", "requires": "...", "target": "..." }
+  ]
+}
+```
+
+Unknown fields anywhere in the document (top-level or nested) are
+rejected, exactly as in versions 1-3. In particular, a stray
+`max_delegation_depth` key on a delegation's authority entry or on an
+operation is rejected at decode time (no such field exists on either
+type) — the identical "enforced for free by the schema shape" mechanism
+Phase 1 already uses for `Agent.authority`.
+
+## Version dispatch
+
+`"4"` routes to the version-4 path described here. `"1"`, `"2"`, and `"3"`
+are unaffected. Any other value (including absent, which decodes as `""`)
+is a single `invalid_version` error: `` version must be "1", "2", "3", or "4", got %q ``.
+The four schemas share no internal model type.
+
+## Field rules
+
+| Field | Rule |
+|---|---|
+| `version` | Required. Must equal `"1"`, `"2"`, `"3"`, or `"4"`. |
+| `principals[].id` | Same rules as version 3. |
+| `principals[].authority` | Array of *root* capability objects `{"scope": "...", "target": "...", "max_delegation_depth": N}`. May be empty. No duplicate `(scope, target)` tuples — regardless of whether their `max_delegation_depth` values agree (two entries sharing a tuple with different depths would be genuinely ambiguous, so both are rejected, never implicitly merged). |
+| `principals[].authority[].max_delegation_depth` | Required on every entry. An integer, `0 ≤ value ≤ limits.MaxDelegationDepth`. No default, no "unbounded" sentinel — a document wanting an effectively-unconstrained capability declares a large, explicit, in-bounds value. |
+| `agents[].id` | Same rules as version 3. |
+| `agents[]` | Must **not** contain an `authority` key, same as versions 1-3. |
+| `delegations[].delegator` / `.delegatee` / `.authority` | Same rules as version 3 — the plain `{"scope", "target"}` tuple, no `max_delegation_depth` field exists here at all. |
+| `operations[].actor` / `.requester` / `.action` / `.requires` / `.target` | Same rules as version 3. |
+
+## `max_delegation_depth` semantics
+
+- **Not part of a capability's identity.** `(scope, target)` remains the
+  sole identity of a capability, exactly as version 2 established.
+  `max_delegation_depth` is metadata attached to a capability's *origin
+  declaration*, checked as an additional, independent dimension once
+  presence/binding are already established — never folded into the
+  presence/binding subset check itself.
+- **The declared value is the root's own remaining budget**, not a
+  hop-count-from-root. A capability declared with `max_delegation_depth: 0`
+  is usable by the declaring principal itself but may not be delegated
+  even one hop further. A capability declared with `max_delegation_depth:
+  1` permits exactly one outgoing delegation; the delegatee receives it at
+  remaining budget 0 (still usable, no further redelegation).
+- **Only re-delegation (an outgoing delegation edge) consumes budget.**
+  Exercising a capability — as an operation's actor or as its requester —
+  never consumes or is gated by remaining budget; using authority and
+  transmitting authority are different acts, and only the latter is
+  metered. A node may hold a capability at remaining budget 0 and still
+  legitimately use it in an operation, or legitimately be named as a
+  requester for it.
+- **Multiple valid delivering paths: the best (maximum) remaining budget
+  wins.** If a capability reaches a node via more than one independently
+  valid delegation path, each path's resulting remaining-budget figure is
+  an independently true fact about that node; the node's further-delegation
+  eligibility is governed by the largest such figure among them — not an
+  average, not the smallest, not the first path found. Ties (equal
+  maximum remaining budget delivered by more than one path) are broken
+  deterministically by the delegator id's ascending lexicographic order,
+  reusing the same iteration order every prior phase already establishes,
+  with no new sorting logic.
+
+## New structural error kind
+
+| Kind | When |
+|---|---|
+| `invalid_delegation_depth` | A `RootCapability`'s `max_delegation_depth` is either absent (decodes as a `nil` pointer — distinct from a present, explicit `0`, which is a legal, meaningful value) or present but negative. Both share this one kind, the same "one kind covers missing and malformed" precedent `unknown_requester` already establishes. |
+
+All version-1/2/3 structural error kinds apply unchanged. `duplicate_capability` is reused, unmodified, projected onto `(scope, target)` only (depth is deliberately excluded from the uniqueness key, per the field-rules table above).
+
+Explicitly **not** a structural error:
+
+- A non-integer JSON value (`1.5`, `"1"`) for `max_delegation_depth` — this
+  is a JSON decode-level type mismatch against the `*int` field, surfaced
+  as the existing `invalid JSON: ...` `ParseError` path, identical in kind
+  to any other field-type mismatch already handled by strict typed
+  decoding.
+- A document that declares a delegation chain exceeding a capability's
+  declared budget — that is the `delegation_depth_violation` semantic
+  finding this phase exists to detect (see "The invariant," below), a
+  `verify`-time (exit 1) result, never a `validate`-time (exit 2) error.
+
+## Resource bounds
+
+All version-1/2/3 bounds (`internal/limits`) apply unchanged. One new
+bound:
+
+| Limit | Value | Notes |
+|---|---|---|
+| `MaxDelegationDepth` | 64 | Bounds the **declared** `max_delegation_depth` value a document may assert on any root capability. A resource-safety valve on the declared *value*, kept as an independent `var` from `MaxChainDepth` (the resource-safety valve on the graph's actual *shape*) — the two are never conflated, even though they currently share a default. |
+
+## The invariant: Delegation Depth Preservation
+
+A version-4 document is checked against Non-Amplification, Context-Binding
+Preservation, and Requester Authorization Preservation exactly as version
+3 is, plus one new invariant, evaluated at the delegation-edge level:
+
+> For every capability `c = (s, t)` declared by a root principal with
+> budget `b = c.max_delegation_depth`, and for every node `n` reachable
+> from that root via a chain of valid delegation edges each carrying `c`,
+> `n`'s *usable* possession of `c` is legitimate regardless of chain
+> length — but `n`'s further transmission of `c` via an outgoing
+> delegation edge is legitimate only if the number of edges already
+> traversed from the root to `n` along the best available valid path is
+> strictly less than `b`. A delegation edge that would carry `c` beyond
+> that budget contributes nothing to its delegatee's derived authority for
+> `c` — not partial credit, not the capability at a clamped depth,
+> nothing.
+
+**Three-tier edge-level precedence, exactly one finding per invalid edge:**
+
+```
+if any capability in the edge's declared set was never held by the
+delegator under any target:
+    authority_amplification            (unchanged from version 2)
+elif any capability was held only under a different target:
+    context_binding_violation          (unchanged from version 2)
+else:
+    # every capability is present, correctly bound; reaching here means
+    # at least one has the delegator's remaining budget exhausted (0)
+    delegation_depth_violation         (new, version 4)
+```
+
+Whole-edge poisoning is preserved for depth failures too: if a single
+delegation edge carries multiple capabilities and any of them is
+depth-exhausted at the delegator, the entire edge is invalid — including
+capabilities in the same edge that individually had ample remaining
+budget. This is the same strict-distrust rule Phase 1 already establishes
+(`TestStrictDistrustNoPartialCredit`), applied a third way.
+
+`delegation_depth_violation` is **always** an edge-level finding
+(`point: "delegation_edge"`), never an operation-level one: delegation
+depth gates transmission, not use. A depth-exhausted edge instead shows up
+downstream, if at all, as an ordinary `authority_amplification` finding at
+the operation level — the *cause* (the edge finding) and the *consequence*
+(the operation finding) are both legitimately emitted, at their own
+points, with no masking between them.
+
+The `delegation_depth_violation` finding carries `declared` (the edge's
+whole declared capability set), `excess` (the depth-exhausted subset, each
+paired with its own `configured_max_depth`/`remaining_depth` — a capability
+is not part of its own identity's depth, so two capabilities in the same
+poisoned edge can legitimately have different configured budgets), `trace`
+(the same `CanonicalTrace` convention every prior finding type already
+uses), and a deterministic `reason` string.
+
+Strict distrust is unchanged in spirit and requires no new code for the
+first two tiers: an invalid incoming edge contributes nothing to
+`DA(n)`, exactly as before. Requester interaction is also unaffected:
+naming a node as a requester creates no delegation edge, consumes no
+budget, and is checked via the same presence-only view every prior phase
+already uses — a requester whose only apparent standing for a capability
+arrived via a now-depth-exhausted path simply never had that capability in
+its derived authority at all (an ordinary Phase 1-3 case), unaffected by
+anything Phase 4 adds.
+
+See `docs/phase-4-plan.md` §3, §4, §8, §9, §10, §11, §12, §13, §16 for the
+full formal statement, multi-path semantics, and verification algorithm.

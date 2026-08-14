@@ -39,4 +39,13 @@ var (
 	// target string (docs/phase-2-plan.md §17). Mirrors MaxIDLength, since
 	// the target grammar mirrors the id grammar (§5).
 	MaxTargetLength = 128
+
+	// MaxDelegationDepth is the maximum value a document may declare for a
+	// RootCapability's max_delegation_depth (docs/phase-4-plan.md §21). This
+	// is a resource-safety bound on the declared value, distinct from
+	// MaxChainDepth (the resource-safety valve on actual graph shape, not a
+	// policy invariant — see MaxChainDepth's own comment). Kept as an
+	// independent var, not an alias, so a test can lower one without
+	// perturbing the other.
+	MaxDelegationDepth = 64
 )

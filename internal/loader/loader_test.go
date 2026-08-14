@@ -89,6 +89,19 @@ func TestMalformedFixtures(t *testing.T) {
 		// LoadDocument) live in loader_v3_test.go.
 		{"unknown-requester.json", true, ""},
 		{"missing-requester.json", true, ""},
+		// Version-4 fixtures (docs/phase-4-plan.md §17): Load is the
+		// version-1-only decode path, so a v4 document's object-shaped
+		// authority entries fail to decode into model.Model's []string
+		// authority field — a ParseError, not a specific ErrorKind. The
+		// version-4-aware assertions for these same fixtures (exact
+		// ErrorKind via LoadDocument) live in loader_v4_test.go.
+		{"missing-delegation-depth.json", true, ""},
+		{"negative-delegation-depth.json", true, ""},
+		{"delegation-depth-exceeds-max.json", true, ""},
+		{"non-integer-delegation-depth.json", true, ""},
+		{"duplicate-root-capability-different-depths.json", true, ""},
+		{"depth-field-on-delegation.json", true, ""},
+		{"depth-field-on-operation.json", true, ""},
 	}
 
 	dir := filepath.Join(testdataRoot, "malformed")

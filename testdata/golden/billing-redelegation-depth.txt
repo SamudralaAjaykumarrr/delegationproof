@@ -1,0 +1,19 @@
+DENY
+2 finding(s)
+
+[1] delegation_depth_violation (delegation_edge)
+  delegator:     billing-agent
+  delegatee:     support-agent
+  declared:      billing:refund@billing-service
+  excess:        billing:refund@billing-service (configured max: 1, remaining: 0)
+  trace:         admin -> billing-agent -> support-agent
+  reason:        billing-agent attempted to delegate billing:refund@billing-service to support-agent, but billing-agent's remaining delegation budget for this capability is 0 (configured maximum: 1) — it may no longer be redelegated
+
+[2] authority_amplification (operation)
+  actor:         support-agent
+  action:        refund-deep
+  requires:      billing:refund@billing-service
+  held:          (none)
+  bound targets: (none)
+  trace:         support-agent -> refund-deep
+  reason:        billing:refund@billing-service was never present in the valid delegation chain reaching support-agent

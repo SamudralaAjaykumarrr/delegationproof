@@ -64,6 +64,14 @@ func RenderText(r Result) string {
 			fmt.Fprintf(&b, "  %-17s %s\n", "actor trace:", joinOrNone(v.ActorTrace, " -> "))
 			fmt.Fprintf(&b, "  %-17s %s\n", "requester trace:", joinOrNone(v.RequesterTrace, " -> "))
 			fmt.Fprintf(&b, "  %-17s %s\n", "reason:", v.Reason)
+		case DelegationDepthFinding:
+			fmt.Fprintf(&b, "[%d] %s (%s)\n", i+1, v.Violation, v.Point)
+			fmt.Fprintf(&b, "  %-14s %s\n", "delegator:", v.Delegator)
+			fmt.Fprintf(&b, "  %-14s %s\n", "delegatee:", v.Delegatee)
+			fmt.Fprintf(&b, "  %-14s %s\n", "declared:", joinCapabilitiesOrNone(v.Declared, ", "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "excess:", joinDepthExcessOrNone(v.Excess, ", "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "trace:", joinOrNone(v.Trace, " -> "))
+			fmt.Fprintf(&b, "  %-14s %s\n", "reason:", v.Reason)
 		}
 	}
 	return b.String()

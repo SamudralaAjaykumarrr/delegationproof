@@ -1,0 +1,26 @@
+{
+  "version": "4",
+  "principals": [
+    { "id": "root-a", "authority": [
+      { "scope": "read", "target": "svc-a", "max_delegation_depth": 2 },
+      { "scope": "list", "target": "svc-a", "max_delegation_depth": 5 }
+    ] },
+    { "id": "root-b", "authority": [ { "scope": "write", "target": "svc-b", "max_delegation_depth": 1 } ] }
+  ],
+  "agents": [
+    { "id": "agent-a" },
+    { "id": "agent-b" }
+  ],
+  "delegations": [
+    { "delegator": "root-a", "delegatee": "agent-a", "authority": [
+      { "scope": "read", "target": "svc-a" },
+      { "scope": "list", "target": "svc-a" }
+    ] },
+    { "delegator": "root-b", "delegatee": "agent-b", "authority": [ { "scope": "write", "target": "svc-b" } ] }
+  ],
+  "operations": [
+    { "actor": "agent-a", "requester": "root-a", "action": "do-read",  "requires": "read",  "target": "svc-a" },
+    { "actor": "agent-a", "requester": "root-a", "action": "do-list",  "requires": "list",  "target": "svc-a" },
+    { "actor": "agent-b", "requester": "root-b", "action": "do-write", "requires": "write", "target": "svc-b" }
+  ]
+}

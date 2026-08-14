@@ -1,0 +1,27 @@
+{
+  "version": "4",
+  "principals": [
+    {
+      "id": "admin",
+      "authority": [
+        { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1 }
+      ]
+    }
+  ],
+  "agents": [
+    { "id": "billing-agent" },
+    { "id": "support-agent" }
+  ],
+  "delegations": [
+    { "delegator": "admin",         "delegatee": "billing-agent", "authority": [
+      { "scope": "billing:refund", "target": "billing-service" }
+    ] },
+    { "delegator": "billing-agent", "delegatee": "support-agent", "authority": [
+      { "scope": "billing:refund", "target": "billing-service" }
+    ] }
+  ],
+  "operations": [
+    { "actor": "billing-agent", "requester": "admin", "action": "refund-ok",   "requires": "billing:refund", "target": "billing-service" },
+    { "actor": "support-agent", "requester": "admin", "action": "refund-deep", "requires": "billing:refund", "target": "billing-service" }
+  ]
+}

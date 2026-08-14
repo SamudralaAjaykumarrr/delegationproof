@@ -78,6 +78,8 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		result = verify.RunV2(doc.V2)
 	case doc.V3 != nil:
 		result = verify.RunV3(doc.V3)
+	case doc.V4 != nil:
+		result = verify.RunV4(doc.V4)
 	}
 
 	switch format {
