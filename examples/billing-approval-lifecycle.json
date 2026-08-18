@@ -1,0 +1,62 @@
+{
+  "version": "6",
+  "principals": [
+    {
+      "id": "admin",
+      "authority": [
+        { "scope": "billing:refund", "target": "billing-service",
+          "max_delegation_depth": 1, "requires_approval": true },
+        { "scope": "billing:void",   "target": "billing-service",
+          "max_delegation_depth": 1, "requires_approval": true }
+      ]
+    },
+    {
+      "id": "compliance-officer",
+      "authority": [
+        { "scope": "billing:refund", "target": "billing-service",
+          "max_delegation_depth": 0, "requires_approval": true },
+        { "scope": "billing:void",   "target": "billing-service",
+          "max_delegation_depth": 0, "requires_approval": true }
+      ]
+    }
+  ],
+  "agents": [
+    { "id": "billing-agent" }
+  ],
+  "delegations": [
+    { "delegator": "admin", "delegatee": "billing-agent", "authority": [
+      { "scope": "billing:refund", "target": "billing-service" },
+      { "scope": "billing:void",   "target": "billing-service" }
+    ] }
+  ],
+  "approvals": [
+    {
+      "approver": "compliance-officer",
+      "scope": "billing:refund",
+      "target": "billing-service",
+      "lifecycle": {
+        "initial": "approved",
+        "states": ["approved"],
+        "transitions": []
+      }
+    },
+    {
+      "approver": "compliance-officer",
+      "scope": "billing:void",
+      "target": "billing-service",
+      "lifecycle": {
+        "initial": "approved",
+        "states": ["approved", "revoked"],
+        "transitions": [
+          { "from": "approved", "to": "revoked", "event": "revoke" }
+        ]
+      }
+    }
+  ],
+  "operations": [
+    { "actor": "billing-agent", "requester": "admin", "action": "refund-safe",
+      "requires": "billing:refund", "target": "billing-service" },
+    { "actor": "billing-agent", "requester": "admin", "action": "void-unsafe",
+      "requires": "billing:void", "target": "billing-service" }
+  ]
+}

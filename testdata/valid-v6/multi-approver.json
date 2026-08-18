@@ -1,0 +1,32 @@
+{
+  "version": "6",
+  "principals": [
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": true }
+    ] },
+    { "id": "compliance-officer", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 0, "requires_approval": true }
+    ] },
+    { "id": "finance-lead", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 0, "requires_approval": true }
+    ] }
+  ],
+  "agents": [
+    { "id": "billing-agent" }
+  ],
+  "delegations": [
+    { "delegator": "admin", "delegatee": "billing-agent", "authority": [ { "scope": "billing:refund", "target": "billing-service" } ] }
+  ],
+  "approvals": [
+    { "approver": "compliance-officer", "scope": "billing:refund", "target": "billing-service",
+      "lifecycle": {
+        "initial": "approved",
+        "states": ["approved", "revoked"],
+        "transitions": [ { "from": "approved", "to": "revoked", "event": "revoke" } ]
+      } },
+    { "approver": "finance-lead", "scope": "billing:refund", "target": "billing-service" }
+  ],
+  "operations": [
+    { "actor": "billing-agent", "requester": "admin", "action": "refund", "requires": "billing:refund", "target": "billing-service" }
+  ]
+}

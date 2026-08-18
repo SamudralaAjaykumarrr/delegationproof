@@ -1,7 +1,7 @@
 # DelegationProof
 
 DelegationProof is a small, dependency-free, offline, deterministic CLI
-that checks a declared agent-delegation topology against five composable
+that checks a declared agent-delegation topology against six composable
 security invariants:
 
 - **Authority Non-Amplification** (Phase 1): does any node in the graph
@@ -19,14 +19,21 @@ security invariants:
 - **Approval Preservation** (Phase 5): if a capability's origin declares
   that exercising it also requires a second party's explicit sign-off,
   does at least one declared, standing-backed approval exist for it?
+- **Temporal Approval Preservation** (Phase 6): if a standing-backed
+  approval declares its own lifecycle (e.g. it can be revoked, expire, or
+  be resubmitted), can that approval ever be observed in a state other
+  than approved — proved by bounded, deterministic reachability
+  exploration over the approval's own small declared state automaton,
+  never assumed from its mere existence?
 
 Each invariant is a separate, additive input schema version (`"1"`
-through `"5"`) rather than a single ever-growing format — see
+through `"6"`) rather than a single ever-growing format — see
 [`docs/phase-1-plan.md`](docs/phase-1-plan.md),
 [`docs/phase-2-plan.md`](docs/phase-2-plan.md),
 [`docs/phase-3-plan.md`](docs/phase-3-plan.md),
-[`docs/phase-4-plan.md`](docs/phase-4-plan.md), and
-[`docs/phase-5-plan.md`](docs/phase-5-plan.md) for the full design
+[`docs/phase-4-plan.md`](docs/phase-4-plan.md),
+[`docs/phase-5-plan.md`](docs/phase-5-plan.md), and
+[`docs/phase-6-plan.md`](docs/phase-6-plan.md) for the full design
 contract each phase follows, including what is deliberately **out of
 scope** and how later phases attach to earlier ones without rewriting
 them.
@@ -50,7 +57,14 @@ and cheap to compute (no backtracking, no search: `O(nodes + edges +
 operations)`). Version 5 extends the same discipline to a fourth entity
 kind — a declared approval record: one whose named approver lacks
 independent standing over the capability it claims to approve contributes
-nothing toward satisfying an approval requirement.
+nothing toward satisfying an approval requirement. Version 6 extends it
+once more: a standing-backed approval record whose own declared lifecycle
+can reach a state other than `"approved"` — proved by a small, bounded,
+deterministic breadth-first search over that lifecycle's own declared
+states and transitions, run independently per approval record — likewise
+contributes nothing toward satisfying the requirement, and an exploration
+that cannot complete within its bounded ceiling is treated identically:
+never as an implicit pass.
 
 ## Build
 
@@ -77,12 +91,11 @@ delegationproof verify   <model.json> [--format text|json]
   (the machine-readable finding contract, one JSON object to stdout, no
   trailing prose).
 
-The input document's `"version"` field (`"1"`, `"2"`, `"3"`, `"4"`, or
-`"5"`) selects which schema and which set of invariants apply — there is
-no separate CLI flag for this. Later versions are strict, additive
-extensions of earlier ones; a version-1 document is checked only against
-Authority Non-Amplification, a version-5 document against all five
-invariants.
+The input document's `"version"` field (`"1"` through `"6"`) selects which
+schema and which set of invariants apply — there is no separate CLI flag
+for this. Later versions are strict, additive extensions of earlier ones;
+a version-1 document is checked only against Authority Non-Amplification,
+a version-6 document against all six invariants.
 
 Errors always go to stderr; result output always goes to stdout — safe to
 pipe/parse stdout even when stderr carries diagnostic noise.
@@ -200,10 +213,43 @@ requires approval, but no approval record was ever declared for it —
 `approval_missing`, not amplification, binding, depth, or confused-deputy,
 since all four of those invariants pass for this operation.
 
+[`examples/billing-approval-lifecycle.json`](examples/billing-approval-lifecycle.json)
+(version 6) declares the same `admin`/`billing-agent` shape, but both
+approval records now carry an explicit `lifecycle`. `compliance-officer`'s
+approval of `billing:refund` declares a lifecycle that never leaves
+`"approved"`; its approval of `billing:void` declares one that can reach
+`"revoked"`:
+
+```sh
+$ delegationproof verify examples/billing-approval-lifecycle.json
+DENY
+1 finding(s)
+
+[1] approval_lifecycle_unsafe (operation)
+  actor:               billing-agent
+  requester:           admin
+  action:              void-unsafe
+  requires:            billing:void@billing-service
+  declared approvers:  compliance-officer
+  unsafe approver:     compliance-officer
+  unsafe state:        revoked
+  lifecycle trace:     approved -[revoke]-> revoked
+  trace:               admin -> billing-agent -> void-unsafe
+  reason:              void-unsafe requires billing:void@billing-service, which billing-agent validly holds and admin is authorized to request, and billing:void@billing-service requires approval; compliance-officer independently hold standing, but none of their declared approval lifecycles can be proven to remain in state 'approved' — compliance-officer's can reach state 'revoked' via approved -[revoke]-> revoked, so it cannot be statically relied upon at time of exercise
+```
+
+`refund-safe` passes silently — `compliance-officer`'s approval of that
+capability declares a lifecycle whose only reachable state is `"approved"`.
+`void-unsafe` fails even though a standing-backed approval genuinely
+exists (version 5's own checks all pass): the approval's *own declared
+lifecycle* can reach `"revoked"`, so it can never be statically relied
+upon — `approval_lifecycle_unsafe`, the temporal analogue of
+`approval_missing`.
+
 ## Input model
 
 See [`schemas/model.md`](schemas/model.md) for the full field-by-field
-contract across all four schema versions (a documentation mirror of the
+contract across all six schema versions (a documentation mirror of the
 `docs/phase-*-plan.md` design contracts — `internal/loader` is the sole
 runtime source of truth; no schema-validation library is a dependency). In
 brief, the version-1 shape:
@@ -265,6 +311,37 @@ and the version-5 shape, adding approval preservation on top of version 4:
 }
 ```
 
+and the version-6 shape, adding an optional temporal lifecycle to an
+individual approval record on top of version 5:
+
+```json
+{
+  "version": "6",
+  "principals": [
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": true }
+    ] }
+  ],
+  "agents": [{ "id": "billing-agent" }],
+  "delegations": [
+    { "delegator": "admin", "delegatee": "billing-agent", "authority": [
+      { "scope": "billing:refund", "target": "billing-service" }
+    ] }
+  ],
+  "approvals": [
+    { "approver": "compliance-officer", "scope": "billing:refund", "target": "billing-service",
+      "lifecycle": {
+        "initial": "approved",
+        "states": ["approved", "revoked"],
+        "transitions": [ { "from": "approved", "to": "revoked", "event": "revoke" } ]
+      } }
+  ],
+  "operations": [
+    { "actor": "billing-agent", "requester": "admin", "action": "refund", "requires": "billing:refund", "target": "billing-service" }
+  ]
+}
+```
+
 Authority is an opaque, exact-match scope string — no wildcards, no
 hierarchy. From version 2 onward, authority is a `(scope, target)`
 capability tuple rather than a bare scope. From version 3 onward, an
@@ -278,10 +355,18 @@ the verifier, never re-declared downstream. From version 5 onward, a
 `approvals` array — each record naming an approver and the exact
 `(scope, target)` it approves. An approval record is checked, never
 traversed: it is not a graph node or edge, and gates a capability's
-*exercise*, never its delegation. Unknown fields anywhere are rejected. An
+*exercise*, never its delegation. From version 6 onward, an individual
+`approvals[]` record may additionally carry an optional `lifecycle` — a
+small, possibly-cyclic named-state automaton (`initial`, `states`,
+`transitions`) describing how that one approval's own standing can change
+over time (e.g. revoked, expired, resubmitted). An approval record with no
+`lifecycle` behaves exactly as it does under version 5 — eternally active
+once declared and standing-backed. Unknown fields anywhere are rejected. An
 agent may never declare its own `authority`; it is always derived. The
-delegation graph must be a DAG; principals cannot be delegation targets.
-All structural problems in one input are collected and reported together,
+delegation graph must be a DAG; principals cannot be delegation targets. A
+lifecycle automaton, by contrast, is never required to be acyclic — a
+declared approval can legitimately be revoked and later resubmitted. All
+structural problems in one input are collected and reported together,
 not fail-fast.
 
 ## Resource bounds
@@ -303,11 +388,21 @@ unbounded allocation, never a hang:
 | Max delegation chain depth (longest simple path, resource-safety valve) | 64 |
 | Max declared `max_delegation_depth` value (policy-value safety valve) | 64 |
 | Max approvals (top-level `approvals` array size) | 10,000 |
+| Max lifecycle states (per approval record's `lifecycle.states`) | 32 |
+| Max lifecycle transitions (per approval record's `lifecycle.transitions`) | 128 |
+| Max exploration states per lifecycle (runtime BFS safety valve) | 32 |
 
 `max_chain_depth` bounds the actual shape of the graph and
 `max_delegation_depth` bounds only how large a *declared policy value* a
 document may assert — they are deliberately independent, never conflated,
-even though they currently share a default value.
+even though they currently share a default value. Likewise, `max lifecycle
+states` is a validate-time bound on what a document may *declare*, while
+`max exploration states per lifecycle` is an independent runtime bound on
+the bounded-BFS engine's own execution — provably unreachable for any
+validate-time-legal document (since the former already caps the state
+count to the same value the latter allows), kept anyway as defense-in-depth
+against an implementation bug. Exceeding the runtime bound never returns
+`ALLOW`: it fails closed as an `approval_lifecycle_unproven` finding.
 
 ## Determinism
 
@@ -336,8 +431,20 @@ output. This holds because:
   A capability's set of standing-backed approvers is likewise the full,
   sorted, deduplicated set of matching `approvals[]` entries, not one
   arbitrarily chosen representative.
+- Version 6's bounded lifecycle exploration (`internal/explore`) is a plain
+  FIFO breadth-first search whose frontier order and per-state outgoing-
+  transition order (ascending lexicographic `(to, event)`) are both fixed
+  functions of the declared `(initial, transitions)` input — never of Go
+  map iteration order. Each lifecycle-bearing approval record is explored
+  completely independently of every other one (never composed into a
+  cross-product global state), so total exploration cost is linear in the
+  number of declared approvals. When more than one non-`"approved"` state
+  is reachable, the canonical one reported is the lexicographically
+  smallest; the one place this selection ranges a map, the result is
+  immediately sorted before anything is read from it.
 
-See `internal/report`, `internal/graph`, and `internal/verify` for where
+See `internal/report`, `internal/graph`, `internal/explore`, and
+`internal/verify` for where
 each of these rules is implemented, and each `cmd/delegationproof/main*_test.go`
 file (`TestJSONFormatInputArrayPermutationInvariance*`,
 `TestJSONFormatDeterministicAcrossRepeatedRuns*`) for the tests that lock
@@ -347,18 +454,27 @@ this down.
 
 ```
 cmd/delegationproof/   CLI entry point: arg parsing, version dispatch, exit-code mapping, stdout/stderr split
-internal/model/        Pure data types per schema version (types.go, types_v2.go, types_v3.go, types_v4.go, types_v5.go)
+internal/model/        Pure data types per schema version (types.go, types_v2.go ... types_v6.go)
 internal/limits/       Resource-bound constants (exported, so tests can lower them)
 internal/loader/       JSON decode + full structural validation, one file per schema version
 internal/graph/        DAG topological sort, cycle detection, canonical BFS trace (shared by every version)
+internal/explore/      Generic bounded, deterministic BFS reachability over a possibly-cyclic labeled digraph (version 6 only)
 internal/verify/       Derived Authority computation, edge/operation evaluation, findings, one Run* per version
 internal/report/       Finding types, deterministic sort order, text/json renderers
 internal/exitcode/     The 4-value exit-code type
 examples/               One worked example per phase
 schemas/                model.md — human-readable input contract, one section per schema version
 testdata/               valid*/, malformed/ (one fixture per structural error kind), golden/
-docs/                   phase-1-plan.md ... phase-5-plan.md — the authoritative design contracts
+docs/                   phase-1-plan.md ... phase-6-plan.md — the authoritative design contracts
 ```
+
+`internal/explore` is a standalone package with zero dependency on
+`model`, `report`, `loader`, or any DelegationProof-specific concept — it
+operates purely on strings and a transition list, and is independently
+unit-tested with no such scaffolding. It is deliberately not folded into
+`internal/graph`: `graph.TopoSort` is strictly DAG-only (it exists
+specifically to *reject* cycles as a structural error), while a version-6
+lifecycle automaton is explicitly, legitimately allowed to contain them.
 
 Each schema version's model types, loader, and verifier are structurally
 disjoint from every other version's — a version-1 document can never be
@@ -386,7 +502,18 @@ not a verified real-world sign-off event — DelegationProof verifies that a
 named approver structurally *could* legitimately approve (by
 independently holding the capability), not that the named party is who
 they claim to be, or that a real compliance workflow actually produced
-that sign-off. Parsing is pure
+that sign-off. A version-6 `lifecycle` declaration is likewise a declared
+fact by the document's author, not an observed real-world event log —
+DelegationProof verifies that a declared automaton *cannot* reach an
+unsafe state given its own declared transitions, not that those
+transitions correspond to any real compliance system's actual behavior,
+or that a real revocation event ever fires when the document claims it
+can. DelegationProof also cannot observe or reason about *when*, in real
+time, an operation executes relative to a lifecycle transition — this is
+precisely why its safety predicate is universal ("every reachable state
+must be `"approved"`") rather than an attempt to prove an operation
+happens to run during an approved window, which is unknowable from a
+static, offline document. Parsing is pure
 stdlib data deserialization: no code execution, no dynamic loading, no
 network access, no filesystem access beyond the one input file. Combined
 with the resource bounds above, it is safe to run against untrusted model
@@ -409,19 +536,36 @@ deterministic finding ordering, byte-identical output across
 semantically-equivalent reordered input, every resource bound (exercised
 via lowered `internal/limits` values in white-box tests), CLI exit codes
 and the stdout/stderr split, and no-panic fuzzing over truncated/mutated
-input — for every schema version, independently.
+input — for every schema version, independently. Version 6 additionally
+covers: standalone `internal/explore` unit tests (cycles, self-loops,
+branching, truncation, determinism) requiring no `model`/`loader` import;
+bounded-search fail-closed behavior (`approval_lifecycle_unproven`,
+exercised only via a lowered `limits.MaxExplorationStatesPerLifecycle`,
+never via a validate-time-legal document at its normal bound, and
+confirmed to never resolve to `ALLOW`); canonical unsafe-state/history
+selection when multiple non-`"approved"` states or paths are reachable;
+and full regression across every prior invariant, confirming a version-6
+document with no `lifecycle` field anywhere produces output identical in
+finding content to the equivalent version-5 document.
 
 ## Non-goals
 
 Networking, hosted services, OAuth/identity-provider implementation, MCP/A2A
 protocol implementation, LLM integration, runtime enforcement/proxying,
-SAT/SMT solving, SARIF output, CI vendor integration, databases, a web UI,
-automatic policy generation, scope wildcards/hierarchy, revocation,
-temporal/session state (including a pending/approved/rejected approval
-state machine), explicit per-edge delegation-budget attenuation,
-multi-approver quorum/threshold requirements, approval-gated delegation,
-self-approval/separation-of-duties enforcement, and real-world
-redelegation-count or approval-workflow correspondence are all explicitly
-out of scope through Phase 5. See each `docs/phase-*-plan.md` for the full
-non-goals list at that phase and how later phases may attach to this
-foundation without rewriting it.
+SAT/SMT solving, symbolic execution, SARIF output, CI vendor integration,
+databases, a web UI, automatic policy generation, scope wildcards/hierarchy,
+explicit per-edge delegation-budget attenuation, multi-approver
+quorum/threshold requirements, approval-gated delegation,
+self-approval/separation-of-duties enforcement, real-world
+redelegation-count or approval-workflow correspondence, a general-purpose
+model checker or policy language, cross-approval/global lifecycle
+composition, and a real event log/session/clock concept are all explicitly
+out of scope through Phase 6. Phase 6 adds one narrow, bounded exception to
+the earlier "no temporal/session state" boundary: an individual approval
+record may declare its own small, optional lifecycle automaton, explored
+completely independently of every other approval record's — this is not
+general session/temporal state, a workflow engine, or a real-time clock;
+DelegationProof still cannot observe or reason about *when* an operation
+executes relative to a declared transition. See each `docs/phase-*-plan.md`
+for the full non-goals list at that phase and how later phases may attach
+to this foundation without rewriting it.

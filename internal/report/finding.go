@@ -134,6 +134,8 @@ func keyOf(f interface{}) sortKey {
 		return sortKey{point: v.Point, subject: v.Delegator, secondary: v.Delegatee}
 	case ApprovalFinding:
 		return sortKey{point: v.Point, subject: v.Actor, secondary: v.Action, scope: v.Requires.Scope, target: v.Requires.Target, requester: v.Requester}
+	case LifecycleFinding:
+		return sortKey{point: v.Point, subject: v.Actor, secondary: v.Action, scope: v.Requires.Scope, target: v.Requires.Target, requester: v.Requester}
 	default:
 		panic(fmt.Sprintf("report: unknown finding type %T", f))
 	}

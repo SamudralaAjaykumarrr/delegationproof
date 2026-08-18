@@ -790,3 +790,200 @@ either.
 
 See `docs/phase-5-plan.md` §3, §4, §8, §9, §10, §11, §12, §13, §17 for the
 full formal statement, multi-path semantics, and verification algorithm.
+
+---
+
+# Version 6 — temporal approval lifecycle model
+
+This section documents the input contract for `"version": "6"` documents
+(`docs/phase-6-plan.md` §6–§20). `internal/loader`'s `validateV6` is the
+sole runtime source of truth; this is documentation only. Version-1 through
+version-5 documents are entirely unaffected by anything in this section —
+see the version dispatch rule below.
+
+## What's new
+
+Phase 6 adds exactly one new, optional concept: **`lifecycle`**, a small,
+possibly-cyclic named-state automaton attached to an individual
+`approvals[]` record. It answers a fifth, independent question none of the
+first five invariants can express: not "does a standing-backed approval
+exist," but "can that approval ever be observed in a state other than
+approved." An approval record with no `lifecycle` field behaves exactly as
+it already does under version 5 — eternally active once declared and
+standing-backed.
+
+Principals, agents, delegations, and operations are byte-for-byte identical
+in shape to their version-5 counterparts. `max_delegation_depth` and
+`requires_approval` mean exactly what they meant in version 5. A lifecycle
+never attaches to a root capability, a delegation edge, or an operation —
+only to the specific approval record it describes.
+
+## Top-level document
+
+```json
+{
+  "version": "6",
+  "principals": [
+    { "id": "...", "authority": [
+      { "scope": "...", "target": "...", "max_delegation_depth": 1, "requires_approval": true }
+    ] }
+  ],
+  "agents": [ { "id": "..." } ],
+  "delegations": [ { "delegator": "...", "delegatee": "...", "authority": [ { "scope": "...", "target": "..." } ] } ],
+  "approvals": [
+    {
+      "approver": "...",
+      "scope": "...",
+      "target": "...",
+      "lifecycle": {
+        "initial": "approved",
+        "states": ["approved", "revoked"],
+        "transitions": [ { "from": "approved", "to": "revoked", "event": "revoke" } ]
+      }
+    }
+  ],
+  "operations": [
+    { "actor": "...", "requester": "...", "action": "...", "requires": "...", "target": "..." }
+  ]
+}
+```
+
+Unknown fields anywhere in the document (top-level or nested, including
+inside a `lifecycle` object) are rejected, exactly as in versions 1-5. In
+particular, a stray `lifecycle` key on a root capability, a delegation's
+authority entry, or an operation is rejected at decode time (no such field
+exists on any of those types).
+
+## Version dispatch
+
+`"6"` routes to the version-6 path described here. `"1"` through `"5"` are
+unaffected. Any other value (including absent, which decodes as `""`) is a
+single `invalid_version` error:
+`` version must be "1", "2", "3", "4", "5", or "6", got %q ``. The six
+schemas share no internal model type.
+
+## Field rules
+
+| Field | Rule |
+|---|---|
+| `version` | Required. Must equal `"1"`, `"2"`, `"3"`, `"4"`, `"5"`, or `"6"`. |
+| `principals[]` / `agents[]` / `delegations[]` / `operations[]` | Same rules as version 5. |
+| `approvals[].approver` / `.scope` / `.target` | Same rules as version 5. |
+| `approvals[].lifecycle` | Optional. A `{initial, states, transitions}` object (§ below). Absent means "no additional temporal structure declared" — identical to version 5's eternal-fact model. |
+| `lifecycle.initial` | Required when `lifecycle` is present. Must reference a name present in `lifecycle.states`. |
+| `lifecycle.states` | Required when `lifecycle` is present. A non-empty array of distinct state names, each matching the unchanged Phase 2 target grammar (`^[A-Za-z0-9_.-]{1,128}$`). |
+| `lifecycle.transitions` | Required when `lifecycle` is present (may be empty). Each entry is `{from, to, event}`: `from`/`to` must each reference a declared state name; `event` is optional and purely diagnostic — `""` (or omitted) is always valid, a non-empty value is checked against the same grammar as `to`/`from`. |
+
+## Lifecycle semantics
+
+- **The reserved safe-state name is exactly `"approved"`** — a fixed
+  literal, not an author-declared role. The comparison is exact,
+  case-sensitive string equality, with no normalization: a state named
+  `"Approved"` is a distinct, unsafe state.
+- **Self-loops and cycles are explicitly legal.** Unlike the delegation
+  graph, a lifecycle automaton is never required to be acyclic —
+  `internal/loader` never runs a cycle-detection pass over one.
+- **A lifecycle governs whether an approval record counts, never whether a
+  capability is held, bound, or within budget.** It is checked strictly
+  after presence, binding, requester standing, and the base approval
+  standing check already pass.
+- **A lifecycle does not grant, propagate, revoke, or extend authority.**
+  Declaring one does not add or remove anything from any node's derived
+  authority, and does not affect `graph.TopoSort`/`graph.CanonicalTrace` —
+  a lifecycle-bearing approval record is never a graph node or edge.
+- **A declared state never mentioned in any transition, or unreachable from
+  `initial`, is not a structural error** — it is simply inert.
+- **A lifecycle whose reachable set never includes `"approved"` at all is
+  not a structural error either** — it is a completely well-formed
+  document that will always fail Phase 6's semantic safety check at
+  `verify` time (exit 1), never at `validate` time (exit 2).
+
+## New structural error kinds
+
+| Kind | When |
+|---|---|
+| `unknown_lifecycle_state` | `lifecycle.initial` is empty or does not match a declared state name, or a transition's `from`/`to` does not match a declared state name. A missing or malformed reference falls into this same kind — mirrors `unknown_requester`/`unknown_approver` precisely. |
+| `duplicate_lifecycle_state` | Two entries within one `lifecycle.states` array share the exact same name. |
+| `duplicate_lifecycle_transition` | Two entries within one `lifecycle.transitions` array share the exact same `(from, event, to)` triple. Two transitions sharing only `from`/`to` but different `event` labels are not a duplicate. |
+| `empty_lifecycle_states` | A `lifecycle` object is present but its `states` array has zero entries. |
+
+All version-1/2/3/4/5 structural error kinds apply unchanged.
+
+Explicitly **not** a structural error: a lifecycle that never reaches
+`"approved"`, a declared state never used in any transition, a cycle within
+a lifecycle, or an approver referenced by a lifecycle-bearing approval
+record lacking standing — all are `verify`-time semantic outcomes, never
+`validate`-time structural errors.
+
+## Resource bounds
+
+All version-1/2/3/4/5 bounds (`internal/limits`) apply unchanged. Three new
+bounds:
+
+| Limit | Value | Notes |
+|---|---|---|
+| `MaxLifecycleStates` | 32 | Bounds `len(lifecycle.states)` per approval record — a validate-time structural bound. |
+| `MaxLifecycleTransitions` | 128 | Bounds `len(lifecycle.transitions)` per approval record — a validate-time structural bound (`4 × MaxLifecycleStates`). |
+| `MaxExplorationStatesPerLifecycle` | 32 | A runtime BFS visited-state safety valve (defense-in-depth only — provably unreachable for any validate-time-legal document, since `MaxLifecycleStates` already bounds the declarable state count to the same value). |
+
+## The invariant: Temporal Approval Preservation
+
+A version-6 document is checked against Non-Amplification, Context-Binding
+Preservation, Requester Authorization Preservation, Delegation Depth
+Preservation, and Approval Preservation exactly as version 5 is, plus one
+new invariant, evaluated at the operation level, strictly last, only once
+every prior tier — including a non-empty standing-backed approval set —
+already passes:
+
+> For every capability `c = (s, t)` requiring approval, and every operation
+> already satisfying presence, binding, requester standing, and Phase 5's
+> approval-standing existential, `op` additionally satisfies Temporal
+> Approval Preservation only if at least one standing-backed approval
+> record `a` has `Safe(a) = true` — i.e. every state reachable from `a`'s
+> declared `lifecycle.initial`, via `a`'s own declared transitions, is the
+> single state `"approved"`. An approval record with no declared
+> `lifecycle` is vacuously safe.
+
+**Five-step operation-level precedence, extended from version 5's
+four-step chain:**
+
+```
+if C not in DA(actor):
+    classify per version 2's rule -> authority_amplification | context_binding_violation
+elif C not in DA(requester):
+    confused_deputy
+elif not actorState[C].requires_approval:
+    ALLOW, no finding
+elif no approval record declared for C:
+    approval_missing
+elif no declared approver independently holds C:
+    approval_unauthorized
+elif no standing-backed record is lifecycle-safe:
+    approval_lifecycle_unsafe   (>=1 record proven to reach a non-"approved" state)
+    approval_lifecycle_unproven (every remaining candidate's exploration was truncated by the bounded-search ceiling, none proven safe)
+else:
+    ALLOW, no finding
+```
+
+`approval_lifecycle_unsafe`/`approval_lifecycle_unproven` are **always**
+operation-level findings (`point: "operation"`), never edge-level —
+lifecycle, like approval itself, gates exercise, not delegation. Safety is
+quantified **universally** over every state reachable from an approval
+record's own declared initial state — never existentially over some
+convenient path. The only existential quantifier is one layer up: *which*
+approval record (among several independently declared, standing-backed
+ones) may be relied upon — narrowing, never replacing, version 5's own
+existential.
+
+Exploration is bounded, deterministic breadth-first search
+(`internal/explore`), run once per distinct lifecycle-bearing approval
+record, entirely independently of every other record's lifecycle (never
+composed into a cross-product global state — this is what keeps total
+exploration cost linear in the number of declared approvals rather than
+exponential). An exploration that cannot complete within the bounded
+ceiling never resolves to `ALLOW` — it fails closed as
+`approval_lifecycle_unproven`.
+
+See `docs/phase-6-plan.md` §3, §8, §9, §10, §11, §12, §13, §14, §16, §21,
+§22, §26 for the full formal statement, the exploration algorithm, and the
+bounded-search fail-closed specification.

@@ -1,0 +1,256 @@
+{
+  "result": "DENY",
+  "findings": [
+    {
+      "violation": "delegation_depth_violation",
+      "point": "delegation_edge",
+      "delegator": "billing-agent",
+      "delegatee": "support-agent",
+      "declared": [
+        {
+          "scope": "billing:refund",
+          "target": "billing-service"
+        }
+      ],
+      "excess": [
+        {
+          "scope": "billing:refund",
+          "target": "billing-service",
+          "configured_max_depth": 1,
+          "remaining_depth": 0
+        }
+      ],
+      "trace": [
+        "admin",
+        "billing-agent",
+        "support-agent"
+      ],
+      "reason": "billing-agent attempted to delegate billing:refund@billing-service to support-agent, but billing-agent's remaining delegation budget for this capability is 0 (configured maximum: 1) — it may no longer be redelegated"
+    },
+    {
+      "violation": "approval_missing",
+      "point": "operation",
+      "actor": "approval-agent",
+      "requester": "root",
+      "action": "op-approval-missing",
+      "requires": {
+        "scope": "approval-req",
+        "target": "svc-a"
+      },
+      "declared_approvers": [],
+      "trace": [
+        "root",
+        "approval-agent",
+        "op-approval-missing"
+      ],
+      "reason": "op-approval-missing requires approval-req@svc-a, which approval-agent validly holds and root is authorized to request, but approval-req@svc-a requires approval and no approval has been declared for it"
+    },
+    {
+      "violation": "approval_unauthorized",
+      "point": "operation",
+      "actor": "approval-agent",
+      "requester": "root",
+      "action": "op-approval-unauthorized",
+      "requires": {
+        "scope": "approval-req2",
+        "target": "svc-a"
+      },
+      "declared_approvers": [
+        "non-standing-approver"
+      ],
+      "trace": [
+        "root",
+        "approval-agent",
+        "op-approval-unauthorized"
+      ],
+      "reason": "op-approval-unauthorized requires approval-req2@svc-a, which requires approval; approval was declared by [non-standing-approver], but none of them independently hold approval-req2@svc-a — an approval must come from a party with standing over the capability being approved"
+    },
+    {
+      "violation": "approval_lifecycle_unsafe",
+      "point": "operation",
+      "actor": "lifecycle-agent",
+      "requester": "root",
+      "action": "op-lifecycle-unproven",
+      "requires": {
+        "scope": "lifecycle-unproven",
+        "target": "svc-a"
+      },
+      "declared_approvers": [
+        "lifecycle-officer"
+      ],
+      "unsafe_approver": "lifecycle-officer",
+      "unsafe_state": "pending",
+      "lifecycle_trace": [],
+      "trace": [
+        "root",
+        "lifecycle-agent",
+        "op-lifecycle-unproven"
+      ],
+      "reason": "op-lifecycle-unproven requires lifecycle-unproven@svc-a, which lifecycle-agent validly holds and root is authorized to request, and lifecycle-unproven@svc-a requires approval; lifecycle-officer independently hold standing, but none of their declared approval lifecycles can be proven to remain in state 'approved' — lifecycle-officer's can reach state 'pending' via pending (its own declared initial state), so it cannot be statically relied upon at time of exercise"
+    },
+    {
+      "violation": "approval_lifecycle_unsafe",
+      "point": "operation",
+      "actor": "lifecycle-agent",
+      "requester": "root",
+      "action": "op-lifecycle-unsafe",
+      "requires": {
+        "scope": "lifecycle-unsafe",
+        "target": "svc-a"
+      },
+      "declared_approvers": [
+        "lifecycle-officer"
+      ],
+      "unsafe_approver": "lifecycle-officer",
+      "unsafe_state": "revoked",
+      "lifecycle_trace": [
+        {
+          "from": "approved",
+          "event": "revoke",
+          "to": "revoked"
+        }
+      ],
+      "trace": [
+        "root",
+        "lifecycle-agent",
+        "op-lifecycle-unsafe"
+      ],
+      "reason": "op-lifecycle-unsafe requires lifecycle-unsafe@svc-a, which lifecycle-agent validly holds and root is authorized to request, and lifecycle-unsafe@svc-a requires approval; lifecycle-officer independently hold standing, but none of their declared approval lifecycles can be proven to remain in state 'approved' — lifecycle-officer's can reach state 'revoked' via approved -[revoke]-\u003e revoked, so it cannot be statically relied upon at time of exercise"
+    },
+    {
+      "violation": "authority_amplification",
+      "point": "operation",
+      "actor": "mid",
+      "action": "op-amp",
+      "requires": {
+        "scope": "never-held-scope",
+        "target": "svc-a"
+      },
+      "held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "bound_targets": [],
+      "trace": [
+        "root",
+        "mid",
+        "op-amp"
+      ],
+      "reason": "never-held-scope@svc-a was never present in the valid delegation chain reaching mid"
+    },
+    {
+      "violation": "confused_deputy",
+      "point": "operation",
+      "actor": "mid",
+      "requester": "requester-bad-scope",
+      "action": "op-cd-scope",
+      "requires": {
+        "scope": "a",
+        "target": "svc-a"
+      },
+      "actor_held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "requester_held": [
+        {
+          "scope": "z",
+          "target": "svc-a"
+        }
+      ],
+      "requester_bound_targets": [],
+      "actor_trace": [
+        "root",
+        "mid",
+        "op-cd-scope"
+      ],
+      "requester_trace": [
+        "root",
+        "requester-bad-scope"
+      ],
+      "reason": "op-cd-scope requires a@svc-a, which mid validly holds, but requester requester-bad-scope has never held a under any target — mid is being induced to exercise authority requester-bad-scope was never granted"
+    },
+    {
+      "violation": "confused_deputy",
+      "point": "operation",
+      "actor": "mid",
+      "requester": "requester-bad-target",
+      "action": "op-cd-target",
+      "requires": {
+        "scope": "a",
+        "target": "svc-a"
+      },
+      "actor_held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "requester_held": [
+        {
+          "scope": "a",
+          "target": "svc-b"
+        }
+      ],
+      "requester_bound_targets": [
+        "svc-b"
+      ],
+      "actor_trace": [
+        "root",
+        "mid",
+        "op-cd-target"
+      ],
+      "requester_trace": [
+        "root",
+        "requester-bad-target"
+      ],
+      "reason": "op-cd-target requires a@svc-a, which mid validly holds, but requester requester-bad-target holds a only for svc-b, which does not include svc-a — mid is being induced to exercise authority requester-bad-target was never granted for this target"
+    },
+    {
+      "violation": "context_binding_violation",
+      "point": "operation",
+      "actor": "mid",
+      "action": "op-ctx",
+      "requires": {
+        "scope": "a",
+        "target": "svc-b"
+      },
+      "held": [
+        {
+          "scope": "a",
+          "target": "svc-a"
+        }
+      ],
+      "bound_targets": [
+        "svc-a"
+      ],
+      "trace": [
+        "root",
+        "mid",
+        "op-ctx"
+      ],
+      "reason": "a is held by mid only for svc-a, which does not include svc-b"
+    },
+    {
+      "violation": "authority_amplification",
+      "point": "operation",
+      "actor": "support-agent",
+      "action": "refund-deep",
+      "requires": {
+        "scope": "billing:refund",
+        "target": "billing-service"
+      },
+      "held": [],
+      "bound_targets": [],
+      "trace": [
+        "support-agent",
+        "refund-deep"
+      ],
+      "reason": "billing:refund@billing-service was never present in the valid delegation chain reaching support-agent"
+    }
+  ]
+}

@@ -116,6 +116,20 @@ func TestMalformedFixtures(t *testing.T) {
 		{"approval-field-on-delegation.json", true, ""},
 		{"approval-field-on-operation.json", true, ""},
 		{"duplicate-root-capability-different-approval.json", true, ""},
+		// Version-6 fixtures (docs/phase-6-plan.md §20): Load is the
+		// version-1-only decode path, so a v6 document's object-shaped
+		// authority entries, its "approvals" array, and any lifecycle
+		// object are unknown/mismatched fields to model.Model — a
+		// ParseError, not a specific ErrorKind. The version-6-aware
+		// assertions for these same fixtures (exact ErrorKind via
+		// LoadDocument) live in loader_v6_test.go.
+		{"unknown-lifecycle-state.json", true, ""},
+		{"duplicate-lifecycle-state.json", true, ""},
+		{"duplicate-lifecycle-transition.json", true, ""},
+		{"empty-lifecycle-states.json", true, ""},
+		{"lifecycle-field-on-delegation.json", true, ""},
+		{"lifecycle-field-on-operation.json", true, ""},
+		{"lifecycle-field-on-root-capability.json", true, ""},
 	}
 
 	dir := filepath.Join(testdataRoot, "malformed")

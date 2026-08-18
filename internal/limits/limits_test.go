@@ -18,6 +18,12 @@ func TestDefaults(t *testing.T) {
 		{"MaxIDLength", int64(MaxIDLength), 128},
 		{"MaxAuthoritySetSize", int64(MaxAuthoritySetSize), 256},
 		{"MaxChainDepth", int64(MaxChainDepth), 64},
+		{"MaxTargetLength", int64(MaxTargetLength), 128},
+		{"MaxDelegationDepth", int64(MaxDelegationDepth), 64},
+		{"MaxApprovals", int64(MaxApprovals), 10000},
+		{"MaxLifecycleStates", int64(MaxLifecycleStates), 32},
+		{"MaxLifecycleTransitions", int64(MaxLifecycleTransitions), 128},
+		{"MaxExplorationStatesPerLifecycle", int64(MaxExplorationStatesPerLifecycle), 32},
 	}
 	for _, c := range cases {
 		if c.got != c.want {
