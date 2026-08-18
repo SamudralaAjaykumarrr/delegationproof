@@ -518,10 +518,8 @@ The release workflow will not publish unless `./scripts/verify.sh`
 passes first (`needs: verify` on every later job) — a failed test suite
 can never produce a release.
 
-**License:** this repository does not yet have a `LICENSE` file — see
-[`docs/v1-release-plan.md`](docs/v1-release-plan.md) §23. This is a
-known, tracked v1.0 blocker pending an explicit choice by the repository
-owner, not an oversight.
+**License:** DelegationProof is licensed under the
+[Apache License 2.0](LICENSE).
 
 ## Documentation
 
