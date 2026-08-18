@@ -1,0 +1,80 @@
+{
+  "version": "6",
+  "principals": [
+    { "id": "root", "authority": [
+      { "scope": "a", "target": "svc-a", "max_delegation_depth": 5, "requires_approval": false },
+      { "scope": "a", "target": "svc-b", "max_delegation_depth": 5, "requires_approval": false },
+      { "scope": "z", "target": "svc-a", "max_delegation_depth": 5, "requires_approval": false },
+      { "scope": "approval-req", "target": "svc-a", "max_delegation_depth": 5, "requires_approval": true },
+      { "scope": "approval-req2", "target": "svc-a", "max_delegation_depth": 5, "requires_approval": true },
+      { "scope": "lifecycle-unsafe", "target": "svc-a", "max_delegation_depth": 5, "requires_approval": true },
+      { "scope": "lifecycle-unproven", "target": "svc-a", "max_delegation_depth": 5, "requires_approval": true }
+    ] },
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": false }
+    ] },
+    { "id": "lifecycle-officer", "authority": [
+      { "scope": "lifecycle-unsafe", "target": "svc-a", "max_delegation_depth": 0, "requires_approval": true },
+      { "scope": "lifecycle-unproven", "target": "svc-a", "max_delegation_depth": 0, "requires_approval": true }
+    ] }
+  ],
+  "agents": [
+    { "id": "mid" },
+    { "id": "requester-good" },
+    { "id": "requester-bad-scope" },
+    { "id": "requester-bad-target" },
+    { "id": "billing-agent" },
+    { "id": "support-agent" },
+    { "id": "approval-agent" },
+    { "id": "non-standing-approver" },
+    { "id": "lifecycle-agent" }
+  ],
+  "delegations": [
+    { "delegator": "root", "delegatee": "mid", "authority": [ { "scope": "a", "target": "svc-a" } ] },
+    { "delegator": "root", "delegatee": "requester-good", "authority": [ { "scope": "a", "target": "svc-a" } ] },
+    { "delegator": "root", "delegatee": "requester-bad-scope", "authority": [ { "scope": "z", "target": "svc-a" } ] },
+    { "delegator": "root", "delegatee": "requester-bad-target", "authority": [ { "scope": "a", "target": "svc-b" } ] },
+    { "delegator": "root", "delegatee": "approval-agent", "authority": [
+      { "scope": "approval-req", "target": "svc-a" },
+      { "scope": "approval-req2", "target": "svc-a" }
+    ] },
+    { "delegator": "root", "delegatee": "lifecycle-agent", "authority": [
+      { "scope": "lifecycle-unsafe", "target": "svc-a" },
+      { "scope": "lifecycle-unproven", "target": "svc-a" }
+    ] },
+    { "delegator": "admin", "delegatee": "billing-agent", "authority": [ { "scope": "billing:refund", "target": "billing-service" } ] },
+    { "delegator": "billing-agent", "delegatee": "support-agent", "authority": [ { "scope": "billing:refund", "target": "billing-service" } ] }
+  ],
+  "approvals": [
+    { "approver": "non-standing-approver", "scope": "approval-req2", "target": "svc-a" },
+    { "approver": "lifecycle-officer", "scope": "lifecycle-unsafe", "target": "svc-a",
+      "lifecycle": {
+        "initial": "approved",
+        "states": ["approved", "revoked"],
+        "transitions": [ { "from": "approved", "to": "revoked", "event": "revoke" } ]
+      } },
+    { "approver": "lifecycle-officer", "scope": "lifecycle-unproven", "target": "svc-a",
+      "lifecycle": {
+        "initial": "pending",
+        "states": ["pending", "step1", "step2", "approved"],
+        "transitions": [
+          { "from": "pending", "to": "step1", "event": "advance" },
+          { "from": "step1", "to": "step2", "event": "advance" },
+          { "from": "step2", "to": "approved", "event": "advance" }
+        ]
+      } }
+  ],
+  "operations": [
+    { "actor": "mid", "requester": "requester-good", "action": "op-amp", "requires": "never-held-scope", "target": "svc-a" },
+    { "actor": "mid", "requester": "requester-bad-scope", "action": "op-cd-scope", "requires": "a", "target": "svc-a" },
+    { "actor": "mid", "requester": "requester-bad-target", "action": "op-cd-target", "requires": "a", "target": "svc-a" },
+    { "actor": "mid", "requester": "requester-good", "action": "op-ctx", "requires": "a", "target": "svc-b" },
+    { "actor": "mid", "requester": "requester-good", "action": "op-pass", "requires": "a", "target": "svc-a" },
+    { "actor": "billing-agent", "requester": "admin", "action": "refund-ok", "requires": "billing:refund", "target": "billing-service" },
+    { "actor": "support-agent", "requester": "admin", "action": "refund-deep", "requires": "billing:refund", "target": "billing-service" },
+    { "actor": "approval-agent", "requester": "root", "action": "op-approval-missing", "requires": "approval-req", "target": "svc-a" },
+    { "actor": "approval-agent", "requester": "root", "action": "op-approval-unauthorized", "requires": "approval-req2", "target": "svc-a" },
+    { "actor": "lifecycle-agent", "requester": "root", "action": "op-lifecycle-unsafe", "requires": "lifecycle-unsafe", "target": "svc-a" },
+    { "actor": "lifecycle-agent", "requester": "root", "action": "op-lifecycle-unproven", "requires": "lifecycle-unproven", "target": "svc-a" }
+  ]
+}

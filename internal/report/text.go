@@ -81,6 +81,18 @@ func RenderText(r Result) string {
 			fmt.Fprintf(&b, "  %-20s %s\n", "declared approvers:", joinOrNone(v.DeclaredApprovers, ", "))
 			fmt.Fprintf(&b, "  %-20s %s\n", "trace:", joinOrNone(v.Trace, " -> "))
 			fmt.Fprintf(&b, "  %-20s %s\n", "reason:", v.Reason)
+		case LifecycleFinding:
+			fmt.Fprintf(&b, "[%d] %s (%s)\n", i+1, v.Violation, v.Point)
+			fmt.Fprintf(&b, "  %-20s %s\n", "actor:", v.Actor)
+			fmt.Fprintf(&b, "  %-20s %s\n", "requester:", v.Requester)
+			fmt.Fprintf(&b, "  %-20s %s\n", "action:", v.Action)
+			fmt.Fprintf(&b, "  %-20s %s\n", "requires:", v.Requires.String())
+			fmt.Fprintf(&b, "  %-20s %s\n", "declared approvers:", joinOrNone(v.DeclaredApprovers, ", "))
+			fmt.Fprintf(&b, "  %-20s %s\n", "unsafe approver:", orNone(v.UnsafeApprover))
+			fmt.Fprintf(&b, "  %-20s %s\n", "unsafe state:", orNone(v.UnsafeState))
+			fmt.Fprintf(&b, "  %-20s %s\n", "lifecycle trace:", joinLifecycleTraceOrNone(v.LifecycleTrace))
+			fmt.Fprintf(&b, "  %-20s %s\n", "trace:", joinOrNone(v.Trace, " -> "))
+			fmt.Fprintf(&b, "  %-20s %s\n", "reason:", v.Reason)
 		}
 	}
 	return b.String()
@@ -91,4 +103,11 @@ func joinOrNone(items []string, sep string) string {
 		return "(none)"
 	}
 	return strings.Join(items, sep)
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
 }

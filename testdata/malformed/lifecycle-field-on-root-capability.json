@@ -1,0 +1,13 @@
+{
+  "version": "6",
+  "principals": [
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": true,
+        "lifecycle": { "initial": "approved", "states": ["approved"], "transitions": [] } }
+    ] }
+  ],
+  "agents": [],
+  "delegations": [],
+  "approvals": [],
+  "operations": []
+}

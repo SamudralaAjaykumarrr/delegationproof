@@ -1,0 +1,26 @@
+{
+  "version": "6",
+  "principals": [
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": true }
+    ] }
+  ],
+  "agents": [],
+  "delegations": [],
+  "approvals": [
+    {
+      "approver": "admin",
+      "scope": "billing:refund",
+      "target": "billing-service",
+      "lifecycle": {
+        "initial": "approved",
+        "states": ["approved", "revoked"],
+        "transitions": [
+          { "from": "approved", "to": "revoked", "event": "revoke" },
+          { "from": "approved", "to": "revoked", "event": "revoke" }
+        ]
+      }
+    }
+  ],
+  "operations": []
+}

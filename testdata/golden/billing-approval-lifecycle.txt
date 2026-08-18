@@ -1,0 +1,14 @@
+DENY
+1 finding(s)
+
+[1] approval_lifecycle_unsafe (operation)
+  actor:               billing-agent
+  requester:           admin
+  action:              void-unsafe
+  requires:            billing:void@billing-service
+  declared approvers:  compliance-officer
+  unsafe approver:     compliance-officer
+  unsafe state:        revoked
+  lifecycle trace:     approved -[revoke]-> revoked
+  trace:               admin -> billing-agent -> void-unsafe
+  reason:              void-unsafe requires billing:void@billing-service, which billing-agent validly holds and admin is authorized to request, and billing:void@billing-service requires approval; compliance-officer independently hold standing, but none of their declared approval lifecycles can be proven to remain in state 'approved' — compliance-officer's can reach state 'revoked' via approved -[revoke]-> revoked, so it cannot be statically relied upon at time of exercise

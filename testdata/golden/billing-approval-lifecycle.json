@@ -1,0 +1,34 @@
+{
+  "result": "DENY",
+  "findings": [
+    {
+      "violation": "approval_lifecycle_unsafe",
+      "point": "operation",
+      "actor": "billing-agent",
+      "requester": "admin",
+      "action": "void-unsafe",
+      "requires": {
+        "scope": "billing:void",
+        "target": "billing-service"
+      },
+      "declared_approvers": [
+        "compliance-officer"
+      ],
+      "unsafe_approver": "compliance-officer",
+      "unsafe_state": "revoked",
+      "lifecycle_trace": [
+        {
+          "from": "approved",
+          "event": "revoke",
+          "to": "revoked"
+        }
+      ],
+      "trace": [
+        "admin",
+        "billing-agent",
+        "void-unsafe"
+      ],
+      "reason": "void-unsafe requires billing:void@billing-service, which billing-agent validly holds and admin is authorized to request, and billing:void@billing-service requires approval; compliance-officer independently hold standing, but none of their declared approval lifecycles can be proven to remain in state 'approved' — compliance-officer's can reach state 'revoked' via approved -[revoke]-\u003e revoked, so it cannot be statically relied upon at time of exercise"
+    }
+  ]
+}

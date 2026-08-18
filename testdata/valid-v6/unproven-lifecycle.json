@@ -1,0 +1,32 @@
+{
+  "version": "6",
+  "principals": [
+    { "id": "admin", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": true }
+    ] },
+    { "id": "compliance-officer", "authority": [
+      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 0, "requires_approval": true }
+    ] }
+  ],
+  "agents": [
+    { "id": "billing-agent" }
+  ],
+  "delegations": [
+    { "delegator": "admin", "delegatee": "billing-agent", "authority": [ { "scope": "billing:refund", "target": "billing-service" } ] }
+  ],
+  "approvals": [
+    { "approver": "compliance-officer", "scope": "billing:refund", "target": "billing-service",
+      "lifecycle": {
+        "initial": "pending",
+        "states": ["pending", "step1", "step2", "approved"],
+        "transitions": [
+          { "from": "pending", "to": "step1", "event": "advance" },
+          { "from": "step1", "to": "step2", "event": "advance" },
+          { "from": "step2", "to": "approved", "event": "advance" }
+        ]
+      } }
+  ],
+  "operations": [
+    { "actor": "billing-agent", "requester": "admin", "action": "refund", "requires": "billing:refund", "target": "billing-service" }
+  ]
+}

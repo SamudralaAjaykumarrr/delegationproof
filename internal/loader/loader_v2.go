@@ -24,13 +24,15 @@ var targetRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
 // Document is the result of a version-dispatched load (§9,
 // docs/phase-3-plan.md §5, docs/phase-4-plan.md §5, docs/phase-5-plan.md
-// §5): exactly one of V1/V2/V3/V4/V5 is set on success.
+// §5, docs/phase-6-plan.md §6): exactly one of V1/V2/V3/V4/V5/V6 is set on
+// success.
 type Document struct {
 	V1 *model.Model
 	V2 *model.ModelV2
 	V3 *model.ModelV3
 	V4 *model.ModelV4
 	V5 *model.ModelV5
+	V6 *model.ModelV6
 }
 
 // versionPeek decodes only the "version" field, permissively, ignoring
@@ -88,11 +90,17 @@ func LoadDocument(path string) (*Document, *LoadError) {
 			return nil, loadErr
 		}
 		return &Document{V5: m}, nil
+	case "6":
+		m, loadErr := decodeAndValidateV6(data)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		return &Document{V6: m}, nil
 	default:
 		return nil, &LoadError{Errors: []ValidationError{{
 			Kind:    KindInvalidVersion,
 			Primary: vp.Version,
-			Message: fmt.Sprintf(`version must be "1", "2", "3", "4", or "5", got %q`, vp.Version),
+			Message: fmt.Sprintf(`version must be "1", "2", "3", "4", "5", or "6", got %q`, vp.Version),
 		}}}
 	}
 }
@@ -184,7 +192,7 @@ func validateV2(m *model.ModelV2) []ValidationError {
 		errs = append(errs, ValidationError{
 			Kind:    KindInvalidVersion,
 			Primary: m.Version,
-			Message: fmt.Sprintf(`version must be "1", "2", "3", "4", or "5", got %q`, m.Version),
+			Message: fmt.Sprintf(`version must be "1", "2", "3", "4", "5", or "6", got %q`, m.Version),
 		})
 	}
 
