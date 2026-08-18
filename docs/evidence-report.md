@@ -12,11 +12,16 @@ extrapolated from an earlier run.
 
 | Field | Value |
 |---|---|
-| Commit | `f1ed6a3608638df1c12d0fee5a48006551aedb39` |
+| Release tag | `v1.0.0` |
+| Commit | resolved from the release tag with `git rev-list -n 1 v1.0.0` |
 | Go version | `go version go1.26.5 linux/amd64` |
 | OS captured on | Linux (x86_64) |
 
-Reproduce: `git rev-parse HEAD && go version`.
+The release commit is intentionally resolved from the release tag rather
+than embedded as a SHA inside this file. Embedding a commit's own final
+SHA in content that contributes to that SHA would be self-referential.
+
+Reproduce: `git rev-list -n 1 v1.0.0 && go version`.
 
 ## 2. Build evidence
 
