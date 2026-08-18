@@ -170,6 +170,31 @@ func TestFileNotFoundExitCode2(t *testing.T) {
 	}
 }
 
+func TestVersionFlag(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--version")
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+	if stdout != "dev\n" {
+		t.Errorf("stdout = %q, want %q (default unreleased-build version)", stdout, "dev\n")
+	}
+}
+
+func TestVersionFlagPrecedesSubcommandDispatch(t *testing.T) {
+	// --version is checked before any subcommand dispatch: it must never
+	// be treated as an unknown subcommand or require a model path.
+	stdout, _, code := runCLI(t, "--version", "ignored-extra-arg")
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	if stdout != "dev\n" {
+		t.Errorf("stdout = %q, want %q", stdout, "dev\n")
+	}
+}
+
 func TestUsageErrors(t *testing.T) {
 	cases := [][]string{
 		{},

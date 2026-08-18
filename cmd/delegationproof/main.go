@@ -18,13 +18,27 @@ import (
 
 const usage = `usage:
   delegationproof validate <model.json>
-  delegationproof verify   <model.json> [--format text|json]`
+  delegationproof verify   <model.json> [--format text|json]
+  delegationproof --version`
+
+// version is overridden at release-build time via
+// -ldflags "-X main.version=$TAG" (see .github/workflows/release.yml). A
+// source build or `go install` without that flag reports "dev" — an
+// honest value for an unreleased/local build, not an error. --version is
+// checked before any subcommand dispatch, file I/O, or invariant
+// evaluation: it is a distinct, mutually-exclusive code path that cannot
+// appear in or perturb validate/verify output in any format.
+var version = "dev"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "--version" {
+		fmt.Fprintln(stdout, version)
+		return int(exitcode.OK)
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, usage)
 		return int(exitcode.UsageError)

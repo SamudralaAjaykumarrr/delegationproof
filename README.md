@@ -1,84 +1,146 @@
 # DelegationProof
 
-DelegationProof is a small, dependency-free, offline, deterministic CLI
-that checks a declared agent-delegation topology against six composable
-security invariants:
+[![CI](https://github.com/SamudralaAjaykumarrr/delegationproof/actions/workflows/ci.yml/badge.svg)](https://github.com/SamudralaAjaykumarrr/delegationproof/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/SamudralaAjaykumarrr/delegationproof?include_prereleases&sort=semver)](https://github.com/SamudralaAjaykumarrr/delegationproof/releases)
 
-- **Authority Non-Amplification** (Phase 1): does any node in the graph
-  exercise or receive authority it was never validly granted?
-- **Context-Binding Preservation** (Phase 2): is a validly-granted
-  capability being exercised or transmitted only for the target it was
-  granted against?
-- **Requester Authorization Preservation** (Phase 3): does the party an
-  operation is actually performed *for* independently hold the capability
-  being exercised, or is a legitimate actor being used as a confused
-  deputy?
-- **Delegation Depth Preservation** (Phase 4): has a capability already
-  been re-delegated more hops from its origin than that origin's own
-  declared budget permits?
-- **Approval Preservation** (Phase 5): if a capability's origin declares
-  that exercising it also requires a second party's explicit sign-off,
-  does at least one declared, standing-backed approval exist for it?
-- **Temporal Approval Preservation** (Phase 6): if a standing-backed
-  approval declares its own lifecycle (e.g. it can be revoked, expire, or
-  be resubmitted), can that approval ever be observed in a state other
-  than approved — proved by bounded, deterministic reachability
-  exploration over the approval's own small declared state automaton,
-  never assumed from its mere existence?
+DelegationProof is a small, dependency-free, offline, deterministic CLI
+that statically checks a *declared* agent-delegation topology for six
+composable authority-safety invariants — proving properties of the
+document you feed it, not of a live system, with no network access and
+no trust extended beyond the Go standard library.
+
+## The problem
+
+Multi-agent and delegated-authority systems (an agent calling another
+agent, a service acting on a user's behalf, a workflow re-delegating a
+capability downstream) fail in specific, recurring ways: authority that
+was never actually granted gets exercised anyway; a capability valid for
+one target gets used against another; a legitimate actor gets used as a
+confused deputy on behalf of someone who never held the capability; a
+re-delegation budget or a required approval gets silently bypassed. None
+of this requires a runtime exploit — it only requires the *declared
+model* of who can do what to be wrong, or to be trusted without being
+checked. DelegationProof checks the declared model.
+
+## 60-second quick start
+
+```sh
+git clone https://github.com/SamudralaAjaykumarrr/delegationproof.git
+cd delegationproof
+go build -o bin/delegationproof ./cmd/delegationproof
+./bin/delegationproof verify examples/billing-refund.json
+```
+
+```
+DENY
+1 finding(s)
+
+[1] authority_amplification (operation)
+  actor:    agent-b
+  action:   billing.refund
+  requires: billing:write
+  held:     billing:read
+  trace:    user -> agent-a -> agent-b -> billing.refund
+  reason:   billing:write was never present in the valid delegation chain reaching agent-b
+```
+
+`agent-b` was only ever delegated `billing:read`, two hops down from the
+principal `user` — never `billing:write`. `billing.view` (which requires
+`billing:read`) would have passed silently; `billing.refund` (which
+requires `billing:write`) fails with exit code `1` because that scope
+was never present anywhere in the valid delegation chain reaching
+`agent-b`. That's the whole product: a declared graph in, a deterministic
+report out, no partial credit for an invalid path.
+
+## What it proves
+
+Given a graph of **principals** (root authority holders), **agents**
+(participants whose authority is only ever *derived* from valid incoming
+delegations), declared **delegation** edges, and **operations** (points
+where an actor exercises a capability, optionally on behalf of a
+**requester**), DelegationProof computes each node's Derived Authority in
+one deterministic topological pass and reports every place a delegation
+edge or operation violates one of six invariants:
+
+| # | Invariant | What it proves | What it does NOT prove |
+|---|---|---|---|
+| 1 | Authority Non-Amplification | No node's derived authority ever includes a capability never validly delegated to it. An invalid incoming edge contributes nothing — not partial credit. | That the declared model matches a real running system, or that a root principal's own authority was legitimately obtained. |
+| 2 | Context/Target Binding Preservation | A capability valid for one target cannot be exercised or transmitted for a different target. | That a `target` string corresponds to any real access-control boundary — it's an opaque label the document author chooses. |
+| 3 | Requester Authorization Preservation | An operation's `requester` is independently checked against the same Derived Authority computation as `actor` — a valid actor cannot be used as a confused deputy for a requester who never independently held the capability. | That `requester` is an authenticated identity — it's a declared label. |
+| 4 | Delegation Depth Preservation | A capability cannot be re-delegated more hops than its root-declared `max_delegation_depth` budget permits, deterministically, regardless of how many valid paths deliver it. | That the budget corresponds to any real re-delegation counter enforced by a running system — it's a policy assertion. |
+| 5 | Approval Preservation | An operation exercising an approval-gated capability is illegitimate unless at least one declared approval names an approver who independently holds that exact capability. | That a named approver is a real, authenticated person, or that a real workflow produced the sign-off. |
+| 6 | Temporal Approval Preservation | A standing-backed approval counts only if *every* state reachable from its declared lifecycle's initial state is `"approved"` — proved by bounded, deterministic BFS. Truncated or unsafe exploration is fail-closed, never `ALLOW`. | That the declared lifecycle corresponds to any real revocation/expiry event, or *when* in real time an operation executes relative to a transition. |
+
+Full statement, attacker model, and non-goals: [`docs/threat-model.md`](docs/threat-model.md).
+Every claim above is backed by an actual command and actual test names in
+[`docs/evidence-report.md`](docs/evidence-report.md) — reproduce it
+yourself rather than trusting this table.
 
 Each invariant is a separate, additive input schema version (`"1"`
 through `"6"`) rather than a single ever-growing format — see
-[`docs/phase-1-plan.md`](docs/phase-1-plan.md),
-[`docs/phase-2-plan.md`](docs/phase-2-plan.md),
-[`docs/phase-3-plan.md`](docs/phase-3-plan.md),
-[`docs/phase-4-plan.md`](docs/phase-4-plan.md),
-[`docs/phase-5-plan.md`](docs/phase-5-plan.md), and
+[`docs/phase-1-plan.md`](docs/phase-1-plan.md) through
 [`docs/phase-6-plan.md`](docs/phase-6-plan.md) for the full design
 contract each phase follows, including what is deliberately **out of
 scope** and how later phases attach to earlier ones without rewriting
 them.
 
-## What it checks
+## Architecture
 
-Given a graph of **principals** (root authority holders, e.g. a user) and
-**agents** (participants whose authority is only ever *derived* from valid
-incoming delegations), plus a set of declared **delegation** edges and
-**operations** (points where an actor exercises a capability, optionally
-on behalf of a **requester**), DelegationProof computes each node's
-Derived Authority in one deterministic topological pass and reports every
-place a delegation edge or operation violates one of the invariants above.
+```
+input JSON → internal/loader → internal/graph → internal/verify → internal/report → cmd/delegationproof
+```
 
-An incoming delegation edge that over-claims relative to its delegator's
-own derived authority — in scope, in target, or (version 4) in remaining
-re-delegation budget — is **fully distrusted**: it contributes nothing to
-the delegatee's derived authority, not even the overlapping part. This
-strict "no partial credit" semantics is what keeps every invariant precise
-and cheap to compute (no backtracking, no search: `O(nodes + edges +
-operations)`). Version 5 extends the same discipline to a fourth entity
-kind — a declared approval record: one whose named approver lacks
-independent standing over the capability it claims to approve contributes
-nothing toward satisfying an approval requirement. Version 6 extends it
-once more: a standing-backed approval record whose own declared lifecycle
-can reach a state other than `"approved"` — proved by a small, bounded,
-deterministic breadth-first search over that lifecycle's own declared
-states and transitions, run independently per approval record — likewise
-contributes nothing toward satisfying the requirement, and an exploration
-that cannot complete within its bounded ceiling is treated identically:
-never as an implicit pass.
+`internal/loader` decodes and exhaustively validates the input;
+`internal/graph` topologically sorts the delegation DAG and computes
+canonical traces; `internal/verify` computes Derived Authority and
+evaluates every invariant applicable to the document's schema version
+(consulting `internal/explore`'s bounded lifecycle BFS for version 6
+only); `internal/report` assembles and renders findings;
+`cmd/delegationproof` is the only package touching `os.Args`/stdout/
+stderr. Full pipeline diagram, package-responsibility table, and the
+version-dispatch design: [`docs/architecture.md`](docs/architecture.md).
 
-## Build
+## Supported model versions
+
+The input document's `"version"` field (`"1"` through `"6"`) selects
+which schema and which set of invariants apply — there is no separate
+CLI flag for this. Later versions are strict, additive extensions of
+earlier ones; a version-1 document is checked only against Authority
+Non-Amplification, a version-6 document against all six invariants. See
+[`schemas/model.md`](schemas/model.md) for the full field-by-field
+contract (`internal/loader` is the sole runtime source of truth — the
+schema doc is a mirror, not a validation dependency).
+
+## Installation
+
+**`go install`** (works once the module is public and tagged; best if
+you already have Go):
 
 ```sh
+go install github.com/SamudralaAjaykumarrr/delegationproof/cmd/delegationproof@latest
+# or a specific release: @v1.0.0
+```
+
+**Source build** (best for contributors and anyone auditing the exact
+code they're running):
+
+```sh
+git clone https://github.com/SamudralaAjaykumarrr/delegationproof.git
+cd delegationproof
 go build -o bin/delegationproof ./cmd/delegationproof
 ```
 
-No third-party dependencies; stdlib only.
+**Release binaries** — see "Release information" below; best if you
+want to try the tool without a Go toolchain.
+
+No third-party dependencies at any install path; `go.mod` is stdlib-only.
 
 ## Usage
 
 ```
 delegationproof validate <model.json>
 delegationproof verify   <model.json> [--format text|json]
+delegationproof --version
 ```
 
 - `validate` parses and structurally validates the input only (schema
@@ -90,12 +152,9 @@ delegationproof verify   <model.json> [--format text|json]
 - `--format` (default `text`) selects `text` (human-readable) or `json`
   (the machine-readable finding contract, one JSON object to stdout, no
   trailing prose).
-
-The input document's `"version"` field (`"1"` through `"6"`) selects which
-schema and which set of invariants apply — there is no separate CLI flag
-for this. Later versions are strict, additive extensions of earlier ones;
-a version-1 document is checked only against Authority Non-Amplification,
-a version-6 document against all six invariants.
+- `--version` prints the build's version string and exits `0`, checked
+  before any subcommand dispatch or file I/O — a source build or `go
+  install` reports `dev`; a tagged release binary reports its tag.
 
 Errors always go to stderr; result output always goes to stdout — safe to
 pipe/parse stdout even when stderr carries diagnostic noise.
@@ -112,38 +171,51 @@ pipe/parse stdout even when stderr carries diagnostic noise.
 ## Worked examples
 
 [`examples/billing-refund.json`](examples/billing-refund.json) (version 1)
-declares a principal `user` holding `billing:read` and `billing:write`,
-who delegates only `billing:read` down a two-hop chain (`user → agent-a →
-agent-b`). `agent-b` then attempts two operations:
-
-```sh
-$ delegationproof verify examples/billing-refund.json
-DENY
-1 finding(s)
-
-[1] authority_amplification (operation)
-  actor:    agent-b
-  action:   billing.refund
-  requires: billing:write
-  held:     billing:read
-  trace:    user -> agent-a -> agent-b -> billing.refund
-  reason:   billing:write was never present in the valid delegation chain reaching agent-b
-```
-
-`billing.view` (requiring `billing:read`) passes silently — it's within
-`agent-b`'s derived authority. `billing.refund` (requiring `billing:write`)
-fails: that scope exists at the root principal but was never delegated
-down the chain, so `agent-b`'s derived authority never included it.
+is the quick-start example above: a two-hop chain (`user → agent-a →
+agent-b`) where `billing:write` was never delegated past the root.
 
 [`examples/billing-context-binding.json`](examples/billing-context-binding.json)
 (version 2) shows the same shape of violation one level more precise: a
 scope *is* validly held, but only for a different target than the one
 exercised — `context_binding_violation`, not amplification.
 
+```sh
+$ delegationproof verify examples/billing-context-binding.json
+DENY
+1 finding(s)
+
+[1] context_binding_violation (operation)
+  actor:         billing-agent
+  action:        read-record
+  requires:      billing:read@payroll-service
+  held:          billing:read@billing-service
+  bound targets: billing-service
+  trace:         user -> billing-agent -> read-record
+  reason:        billing:read is held by billing-agent only for billing-service, which does not include payroll-service
+```
+
 [`examples/billing-confused-deputy.json`](examples/billing-confused-deputy.json)
 (version 3) shows an actor that legitimately holds the required capability
 being induced to act on behalf of a requester who never independently held
 it — `confused_deputy`.
+
+```sh
+$ delegationproof verify examples/billing-confused-deputy.json
+DENY
+1 finding(s)
+
+[1] confused_deputy (operation)
+  actor:            billing-agent
+  requester:        support-agent
+  action:           refund-b
+  requires:         billing:refund@billing-service
+  actor held:       billing:refund@billing-service
+  requester held:   billing:read@billing-service
+  requester bound:  (none)
+  actor trace:      admin -> billing-agent -> refund-b
+  requester trace:  admin -> support-agent
+  reason:           refund-b requires billing:refund@billing-service, which billing-agent validly holds, but requester support-agent has never held billing:refund under any target — billing-agent is being induced to exercise authority support-agent was never granted
+```
 
 [`examples/billing-redelegation-depth.json`](examples/billing-redelegation-depth.json)
 (version 4) declares `billing:refund@billing-service` with
@@ -248,11 +320,7 @@ upon — `approval_lifecycle_unsafe`, the temporal analogue of
 
 ## Input model
 
-See [`schemas/model.md`](schemas/model.md) for the full field-by-field
-contract across all six schema versions (a documentation mirror of the
-`docs/phase-*-plan.md` design contracts — `internal/loader` is the sole
-runtime source of truth; no schema-validation library is a dependency). In
-brief, the version-1 shape:
+In brief, the version-1 shape:
 
 ```json
 {
@@ -279,31 +347,6 @@ and the version-4 shape, showing every field added by every phase:
     { "delegator": "admin", "delegatee": "billing-agent", "authority": [
       { "scope": "billing:refund", "target": "billing-service" }
     ] }
-  ],
-  "operations": [
-    { "actor": "billing-agent", "requester": "admin", "action": "refund", "requires": "billing:refund", "target": "billing-service" }
-  ]
-}
-```
-
-and the version-5 shape, adding approval preservation on top of version 4:
-
-```json
-{
-  "version": "5",
-  "principals": [
-    { "id": "admin", "authority": [
-      { "scope": "billing:refund", "target": "billing-service", "max_delegation_depth": 1, "requires_approval": true }
-    ] }
-  ],
-  "agents": [{ "id": "billing-agent" }],
-  "delegations": [
-    { "delegator": "admin", "delegatee": "billing-agent", "authority": [
-      { "scope": "billing:refund", "target": "billing-service" }
-    ] }
-  ],
-  "approvals": [
-    { "approver": "compliance-officer", "scope": "billing:refund", "target": "billing-service" }
   ],
   "operations": [
     { "actor": "billing-agent", "requester": "admin", "action": "refund", "requires": "billing:refund", "target": "billing-service" }
@@ -343,31 +386,29 @@ individual approval record on top of version 5:
 ```
 
 Authority is an opaque, exact-match scope string — no wildcards, no
-hierarchy. From version 2 onward, authority is a `(scope, target)`
-capability tuple rather than a bare scope. From version 3 onward, an
-operation names a `requester` in addition to its `actor`. From version 4
-onward, a *principal's own declared* capability additionally carries
-`max_delegation_depth` — the field exists nowhere else (never on a
-delegation edge, never on an operation); remaining budget is derived by
-the verifier, never re-declared downstream. From version 5 onward, a
-*principal's own declared* capability additionally carries a required
-`requires_approval` boolean, and the document gains a new top-level
-`approvals` array — each record naming an approver and the exact
-`(scope, target)` it approves. An approval record is checked, never
-traversed: it is not a graph node or edge, and gates a capability's
-*exercise*, never its delegation. From version 6 onward, an individual
-`approvals[]` record may additionally carry an optional `lifecycle` — a
-small, possibly-cyclic named-state automaton (`initial`, `states`,
-`transitions`) describing how that one approval's own standing can change
-over time (e.g. revoked, expired, resubmitted). An approval record with no
-`lifecycle` behaves exactly as it does under version 5 — eternally active
-once declared and standing-backed. Unknown fields anywhere are rejected. An
-agent may never declare its own `authority`; it is always derived. The
-delegation graph must be a DAG; principals cannot be delegation targets. A
-lifecycle automaton, by contrast, is never required to be acyclic — a
-declared approval can legitimately be revoked and later resubmitted. All
-structural problems in one input are collected and reported together,
-not fail-fast.
+hierarchy. Unknown fields anywhere are rejected. An agent may never
+declare its own `authority`; it is always derived. The delegation graph
+must be a DAG; principals cannot be delegation targets. A lifecycle
+automaton, by contrast, is never required to be acyclic. All structural
+problems in one input are collected and reported together, not
+fail-fast. See [`schemas/model.md`](schemas/model.md) for the complete
+field-by-field contract across all six versions.
+
+## Security guarantees and limitations
+
+DelegationProof is a static, offline analyzer. It proves properties
+about a *declared* model; it does not observe, enforce, or intercept
+real agent/tool traffic, and it does not verify that a real running
+system matches its declared model.
+
+> A principal's declared authority is the axiomatic root of trust — the
+> tool does not verify how a principal obtained it. A `requester`,
+> `approvals[]` entry, and `lifecycle` declaration are each a claim by
+> the document's author, checked for internal consistency against the
+> rest of the declared model, never against reality.
+
+Full attacker model, trust boundaries, fail-closed behavior, and
+non-goals: [`docs/threat-model.md`](docs/threat-model.md).
 
 ## Resource bounds
 
@@ -392,161 +433,116 @@ unbounded allocation, never a hang:
 | Max lifecycle transitions (per approval record's `lifecycle.transitions`) | 128 |
 | Max exploration states per lifecycle (runtime BFS safety valve) | 32 |
 
-`max_chain_depth` bounds the actual shape of the graph and
-`max_delegation_depth` bounds only how large a *declared policy value* a
-document may assert — they are deliberately independent, never conflated,
-even though they currently share a default value. Likewise, `max lifecycle
-states` is a validate-time bound on what a document may *declare*, while
-`max exploration states per lifecycle` is an independent runtime bound on
-the bounded-BFS engine's own execution — provably unreachable for any
-validate-time-legal document (since the former already caps the state
-count to the same value the latter allows), kept anyway as defense-in-depth
-against an implementation bug. Exceeding the runtime bound never returns
-`ALLOW`: it fails closed as an `approval_lifecycle_unproven` finding.
-
 ## Determinism
 
-Identical input always produces byte-identical output, and reordering the
-`principals`/`agents`/`delegations`/`operations` arrays (or the capability
-arrays within them) in a semantically-equivalent model never changes the
-output. This holds because:
+Identical input always produces byte-identical output, and reordering
+any array in a semantically-equivalent model never changes the output —
+Kahn's-algorithm topological sort and every trace-finding BFS break ties
+by ascending lexicographic id, findings are sorted by a fixed total
+order, and multi-path computations use commutative/associative
+operations or an explicit tie-break rather than depending on Go map
+iteration order anywhere. Full mechanism list:
+[`docs/architecture.md`](docs/architecture.md#determinism-mechanisms).
+Locked down by `TestJSONFormatInputArrayPermutationInvariance*` and
+`TestJSONFormatDeterministicAcrossRepeatedRuns*` (one pair per schema
+version) — see [`docs/evidence-report.md`](docs/evidence-report.md) §5
+for byte-for-byte hash evidence against the shipped binary.
 
-- Kahn's-algorithm topological sort breaks every tie by ascending
-  lexicographic node id — never by map iteration order.
-- Findings are sorted by a total order over their own content:
-  `(point, subject_id, secondary_id_or_action, scope, target, requester)`.
-- Delegation traces are the first path a canonical, tie-broken BFS finds
-  from the (sorted) set of principals, using only edges that were fully
-  valid (presence, binding, and — for version 4 — depth).
-- Authority sets are canonicalized (sorted, deduplicated) wherever they
-  appear in output.
-- Version 4's multi-path remaining-delegation-budget computation takes the
-  componentwise maximum over all valid incoming edges per capability, with
-  ties broken by the same ascending-lexicographic-delegator-id iteration
-  order already used everywhere else — never a second sort.
-- Version 5's multi-path `requires_approval` computation takes the
-  logical OR over all valid incoming edges per capability — commutative,
-  associative, and idempotent, so it needs no tie-break at all, computed
-  independently of which path wins version 4's remaining-budget contest.
-  A capability's set of standing-backed approvers is likewise the full,
-  sorted, deduplicated set of matching `approvals[]` entries, not one
-  arbitrarily chosen representative.
-- Version 6's bounded lifecycle exploration (`internal/explore`) is a plain
-  FIFO breadth-first search whose frontier order and per-state outgoing-
-  transition order (ascending lexicographic `(to, event)`) are both fixed
-  functions of the declared `(initial, transitions)` input — never of Go
-  map iteration order. Each lifecycle-bearing approval record is explored
-  completely independently of every other one (never composed into a
-  cross-product global state), so total exploration cost is linear in the
-  number of declared approvals. When more than one non-`"approved"` state
-  is reachable, the canonical one reported is the lexicographically
-  smallest; the one place this selection ranges a map, the result is
-  immediately sorted before anything is read from it.
+## Verification and testing
 
-See `internal/report`, `internal/graph`, `internal/explore`, and
-`internal/verify` for where
-each of these rules is implemented, and each `cmd/delegationproof/main*_test.go`
-file (`TestJSONFormatInputArrayPermutationInvariance*`,
-`TestJSONFormatDeterministicAcrossRepeatedRuns*`) for the tests that lock
-this down.
+The one-command release gate, runnable identically by a human or by CI:
 
-## Architecture
-
-```
-cmd/delegationproof/   CLI entry point: arg parsing, version dispatch, exit-code mapping, stdout/stderr split
-internal/model/        Pure data types per schema version (types.go, types_v2.go ... types_v6.go)
-internal/limits/       Resource-bound constants (exported, so tests can lower them)
-internal/loader/       JSON decode + full structural validation, one file per schema version
-internal/graph/        DAG topological sort, cycle detection, canonical BFS trace (shared by every version)
-internal/explore/      Generic bounded, deterministic BFS reachability over a possibly-cyclic labeled digraph (version 6 only)
-internal/verify/       Derived Authority computation, edge/operation evaluation, findings, one Run* per version
-internal/report/       Finding types, deterministic sort order, text/json renderers
-internal/exitcode/     The 4-value exit-code type
-examples/               One worked example per phase
-schemas/                model.md — human-readable input contract, one section per schema version
-testdata/               valid*/, malformed/ (one fixture per structural error kind), golden/
-docs/                   phase-1-plan.md ... phase-6-plan.md — the authoritative design contracts
+```sh
+./scripts/verify.sh
 ```
 
-`internal/explore` is a standalone package with zero dependency on
-`model`, `report`, `loader`, or any DelegationProof-specific concept — it
-operates purely on strings and a transition list, and is independently
-unit-tested with no such scaffolding. It is deliberately not folded into
-`internal/graph`: `graph.TopoSort` is strictly DAG-only (it exists
-specifically to *reject* cycles as a structural error), while a version-6
-lifecycle automaton is explicitly, legitimately allowed to contain them.
+Runs, in order, fail-fast: `gofmt -l .`, `go vet ./...`, `go test
+./... -race -count=1`, a build, deterministic/permutation-invariance
+checks against the just-built binary for every `examples/*.json` file,
+an exit-code-2 check against every `testdata/malformed/*.json` fixture,
+and a repository-hygiene check (`git status --porcelain` empty). Exits
+`0` only if every gate passes.
 
-Each schema version's model types, loader, and verifier are structurally
-disjoint from every other version's — a version-1 document can never be
-accidentally interpreted under version-2+ semantics, and adding a new
-phase never modifies an earlier phase's production code path (beyond a
-single, explicitly sanctioned update to the `invalid_version` error
-message text each time a new version literal is added).
-
-## Security assumptions
-
-DelegationProof is a static, offline analyzer. It proves properties about
-a *declared* model; it does not observe, enforce, or intercept real
-agent/tool traffic, and it does not verify that a real running system
-matches its declared model. A principal's declared authority is the
-axiomatic root of trust — the tool does not verify how a principal
-obtained it (that is identity/OAuth territory, out of scope). A version-3+
-`requester` is a declared label, not an authenticated identity. A
-version-4 `max_delegation_depth` is a policy assertion by the document's
-author, not a verified fact about a real system's actual re-delegation
-history — DelegationProof proves that a document's declared model never
-claims a capability travels farther than its own declared budget permits,
-not that a real system enforces that budget at runtime. A version-5
-`approvals[]` entry is likewise a declared fact by the document's author,
-not a verified real-world sign-off event — DelegationProof verifies that a
-named approver structurally *could* legitimately approve (by
-independently holding the capability), not that the named party is who
-they claim to be, or that a real compliance workflow actually produced
-that sign-off. A version-6 `lifecycle` declaration is likewise a declared
-fact by the document's author, not an observed real-world event log —
-DelegationProof verifies that a declared automaton *cannot* reach an
-unsafe state given its own declared transitions, not that those
-transitions correspond to any real compliance system's actual behavior,
-or that a real revocation event ever fires when the document claims it
-can. DelegationProof also cannot observe or reason about *when*, in real
-time, an operation executes relative to a lifecycle transition — this is
-precisely why its safety predicate is universal ("every reachable state
-must be `"approved"`") rather than an attempt to prove an operation
-happens to run during an approved window, which is unknowable from a
-static, offline document. Parsing is pure
-stdlib data deserialization: no code execution, no dynamic loading, no
-network access, no filesystem access beyond the one input file. Combined
-with the resource bounds above, it is safe to run against untrusted model
-files without additional sandboxing. It is not a server, not multi-tenant,
-not persistent: one file in, one deterministic report out, process exits.
-
-## Testing
+Just the tests:
 
 ```sh
 go test ./... -race -count=1
 ```
 
-Test categories include: clean-pass golden output, every structural error
-kind in each phase's design contract (one fixture each under
-`testdata/malformed/`), the strict-distrust ("no partial credit")
-semantics of Derived Authority (extended in version 4 to a third failure
-surface — remaining re-delegation budget, and in version 5 to a fourth —
-non-standing approval records — without weakening the earlier ones),
-deterministic finding ordering, byte-identical output across
-semantically-equivalent reordered input, every resource bound (exercised
-via lowered `internal/limits` values in white-box tests), CLI exit codes
-and the stdout/stderr split, and no-panic fuzzing over truncated/mutated
-input — for every schema version, independently. Version 6 additionally
-covers: standalone `internal/explore` unit tests (cycles, self-loops,
-branching, truncation, determinism) requiring no `model`/`loader` import;
-bounded-search fail-closed behavior (`approval_lifecycle_unproven`,
-exercised only via a lowered `limits.MaxExplorationStatesPerLifecycle`,
-never via a validate-time-legal document at its normal bound, and
-confirmed to never resolve to `ALLOW`); canonical unsafe-state/history
-selection when multiple non-`"approved"` states or paths are reachable;
-and full regression across every prior invariant, confirming a version-6
-document with no `lifecycle` field anywhere produces output identical in
-finding content to the equivalent version-5 document.
+Test categories include: clean-pass golden output, every structural
+error kind in each phase's design contract, strict-distrust ("no
+partial credit") semantics, deterministic finding ordering, byte-
+identical output across semantically-equivalent reordered input, every
+resource bound (exercised via lowered `internal/limits` values), CLI
+exit codes and the stdout/stderr split, and no-panic fuzzing over
+truncated/mutated input — for every schema version, independently.
+
+## CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs
+`./scripts/verify.sh` on every push to `main` and every pull request
+targeting it (the `verify` job), plus a compile-only `cross-build`
+matrix over all five release targets. Two first-party GitHub actions
+only (`actions/checkout`, `actions/setup-go`), both pinned by commit
+SHA. `permissions: contents: read` at the workflow level — CI never
+writes to the repository.
+
+## Release information
+
+Version: **v1.0.0** (see [`docs/v1-release-plan.md`](docs/v1-release-plan.md)
+for the release definition and acceptance criteria). `delegationproof
+--version` reports the tag a release binary was built from, or `dev` for
+a source build.
+
+Release binaries — [`.github/workflows/release.yml`](.github/workflows/release.yml),
+triggered by pushing a `vMAJOR.MINOR.PATCH` tag — are published for:
+
+| GOOS | GOARCH | Archive |
+|---|---|---|
+| linux | amd64 | `.tar.gz` |
+| linux | arm64 | `.tar.gz` |
+| darwin | amd64 | `.tar.gz` |
+| darwin | arm64 | `.tar.gz` |
+| windows | amd64 | `.zip` |
+
+Each archive is named `delegationproof_<version>_<os>_<arch>.<ext>` and
+contains the binary, `LICENSE`, and a short `README.txt` pointer back to
+this repository. A `checksums.txt` at the release root lets you verify a
+downloaded archive:
+
+```sh
+sha256sum -c checksums.txt
+```
+
+The release workflow will not publish unless `./scripts/verify.sh`
+passes first (`needs: verify` on every later job) — a failed test suite
+can never produce a release.
+
+**License:** this repository does not yet have a `LICENSE` file — see
+[`docs/v1-release-plan.md`](docs/v1-release-plan.md) §23. This is a
+known, tracked v1.0 blocker pending an explicit choice by the repository
+owner, not an oversight.
+
+## Documentation
+
+- [`docs/architecture.md`](docs/architecture.md) — pipeline diagram,
+  package responsibilities, determinism mechanisms, version dispatch.
+- [`docs/threat-model.md`](docs/threat-model.md) — trust boundaries,
+  attacker model, fail-closed behavior, assumptions, non-goals.
+- [`docs/evidence-report.md`](docs/evidence-report.md) — every claim in
+  this README paired with the exact command and exact output that
+  reproduces it.
+- [`schemas/model.md`](schemas/model.md) — field-by-field input
+  contract, all six schema versions.
+- [`docs/phase-1-plan.md`](docs/phase-1-plan.md) …
+  [`docs/phase-6-plan.md`](docs/phase-6-plan.md) — the authoritative,
+  immutable design contract for each invariant.
+- [`docs/v1-release-plan.md`](docs/v1-release-plan.md) — the release
+  plan this productization pass implements.
+- [`SECURITY.md`](SECURITY.md) — how to report a soundness or
+  resource-exhaustion bug.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — PR process and non-negotiable
+  invariants.
 
 ## Non-goals
 
@@ -567,5 +563,8 @@ completely independently of every other approval record's — this is not
 general session/temporal state, a workflow engine, or a real-time clock;
 DelegationProof still cannot observe or reason about *when* an operation
 executes relative to a declared transition. See each `docs/phase-*-plan.md`
-for the full non-goals list at that phase and how later phases may attach
-to this foundation without rewriting it.
+for the full non-goals list at that phase, and
+[`docs/v1-release-plan.md`](docs/v1-release-plan.md) §30 for this
+productization capstone's own non-goals (no seventh invariant, no
+networking, no hosted API, no web UI, no database, no runtime
+enforcement).

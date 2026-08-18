@@ -1,0 +1,15 @@
+{
+  "release": "v1.0.0",
+  "commit": "bd5870d1c7e29af3626277e387e03eff97568ba5",
+  "go_version": "go1.26.5",
+  "verify_script": "scripts/verify.sh",
+  "examples": [
+    { "file": "examples/billing-refund.json", "command": "verify", "expected_exit_code": 1, "expected_violation": "authority_amplification" },
+    { "file": "examples/billing-context-binding.json", "command": "verify", "expected_exit_code": 1, "expected_violation": "context_binding_violation" },
+    { "file": "examples/billing-confused-deputy.json", "command": "verify", "expected_exit_code": 1, "expected_violation": "confused_deputy" },
+    { "file": "examples/billing-redelegation-depth.json", "command": "verify", "expected_exit_code": 1, "expected_violation": "delegation_depth_violation" },
+    { "file": "examples/billing-approval.json", "command": "verify", "expected_exit_code": 1, "expected_violation": "approval_missing" },
+    { "file": "examples/billing-approval-lifecycle.json", "command": "verify", "expected_exit_code": 1, "expected_violation": "approval_lifecycle_unsafe" }
+  ],
+  "checksums_file": "checksums.txt"
+}
