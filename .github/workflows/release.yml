@@ -4,6 +4,18 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+  # Manual recovery path: lets a maintainer re-run release/checksum/publish
+  # for a tag that was already pushed (e.g. a prior run failed partway
+  # through) without pushing a new tag or moving the existing one. The
+  # workflow *definition* used is whatever main has at dispatch time; the
+  # source that gets verified, built, and published is always the commit
+  # the requested tag already points to (see the `resolve` job).
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing vMAJOR.MINOR.PATCH tag to release, e.g. v1.0.0"
+        required: true
+        type: string
 
 # Least privilege by default: only the publish job escalates, and only to
 # the minimum scope `gh release create` needs.
@@ -11,12 +23,58 @@ permissions:
   contents: read
 
 jobs:
+  # Resolves the one canonical release tag for this run and validates it
+  # before any verification/build/publish work happens. On a tag push the
+  # tag obviously already exists (it's what triggered the run). On a
+  # manual dispatch it does not, by default, get any special trust: the
+  # requested tag must already exist and look like a release tag, or the
+  # run fails here rather than silently operating on "main".
+  resolve:
+    name: resolve release tag
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+    steps:
+      - name: Resolve and validate release tag
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DISPATCH_TAG: ${{ inputs.release_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$DISPATCH_TAG"
+          else
+            tag="$REF_NAME"
+          fi
+
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::release tag '$tag' does not match required shape vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if ! gh api "repos/$REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+              echo "::error::tag '$tag' does not exist in $REPO — refusing to release it (this workflow never creates or moves tags)" >&2
+              exit 1
+            fi
+          fi
+
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+
   verify:
     name: verify
     runs-on: ubuntu-latest
+    needs: resolve
     steps:
-      - name: Checkout
+      - name: Checkout release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.release_tag }}
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -27,7 +85,7 @@ jobs:
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [resolve, verify]
     strategy:
       matrix:
         include:
@@ -47,8 +105,10 @@ jobs:
             goarch: amd64
             ext: zip
     steps:
-      - name: Checkout
+      - name: Checkout release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.release_tag }}
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -58,22 +118,25 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
         run: |
           set -eu
           out="delegationproof"
           if [ "${{ matrix.goos }}" = "windows" ]; then out="delegationproof.exe"; fi
-          go build -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+          go build -trimpath -ldflags "-s -w -X main.version=$RELEASE_TAG" \
             -o "$out" ./cmd/delegationproof
           echo "BIN=$out" >> "$GITHUB_ENV"
       - name: Package archive
+        env:
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
         run: |
           set -eu
-          name="delegationproof_${{ github.ref_name }}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          name="delegationproof_${RELEASE_TAG}_${{ matrix.goos }}_${{ matrix.goarch }}"
           mkdir -p "dist/$name"
           cp "$BIN" "dist/$name/"
           cp LICENSE "dist/$name/LICENSE" 2>/dev/null || echo "LICENSE not present — release blocked until one is added" >&2
           printf 'DelegationProof %s\n\nSource, documentation, and full license text:\nhttps://github.com/%s\n' \
-            "${{ github.ref_name }}" "${{ github.repository }}" > "dist/$name/README.txt"
+            "$RELEASE_TAG" "${{ github.repository }}" > "dist/$name/README.txt"
           if [ "${{ matrix.ext }}" = "zip" ]; then
             (cd dist && zip -r "${name}.zip" "$name")
           else
@@ -103,7 +166,7 @@ jobs:
           cd artifacts
           sha256sum * > checksums.txt
       - name: Upload checksums
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2 # v4.5.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: checksums
           path: artifacts/checksums.txt
@@ -112,14 +175,16 @@ jobs:
   publish:
     name: publish
     runs-on: ubuntu-latest
-    needs: [verify, build, checksum]
+    needs: [resolve, verify, build, checksum]
     permissions:
       contents: write
       id-token: write
       attestations: write
     steps:
-      - name: Checkout
+      - name: Checkout release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.release_tag }}
       - name: Download all artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -128,11 +193,16 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
         run: |
           set -eu
-          gh release create "$GITHUB_REF_NAME" artifacts/* \
-            --title "$GITHUB_REF_NAME" \
-            --notes "DelegationProof $GITHUB_REF_NAME. See checksums.txt to verify downloaded archives (sha256sum -c checksums.txt)."
+          # --verify-tag refuses to run if $RELEASE_TAG doesn't already
+          # exist as a real tag in this repo, instead of creating one —
+          # this workflow must never create, move, or retag a release tag.
+          gh release create "$RELEASE_TAG" artifacts/* \
+            --verify-tag \
+            --title "$RELEASE_TAG" \
+            --notes "DelegationProof $RELEASE_TAG. See checksums.txt to verify downloaded archives (sha256sum -c checksums.txt)."
       - name: Attest build provenance
         continue-on-error: true
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
